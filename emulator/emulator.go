@@ -38,10 +38,11 @@ import (
 */
 
 const (
-	REGISTERS   = 16
-	MEM_SIZE    = 4096
-	STACK_SIZE  = 16
-	SCREEN_SIZE = 8 * 15
+	REGISTERS     = 16
+	MEM_SIZE      = 4096
+	STACK_SIZE    = 16
+	DISPLAY_SIZE  = 8 * 15
+	KEYBOARD_SIZE = 16
 
 	// niblet masks
 	N1_MASK = 0xF000
@@ -66,8 +67,11 @@ const (
 	LD_I          = 0xA000 // load register i with remaining bits
 	JMP_V0        = 0xB000 // jump to nnn + v0
 	RND_VX_KK     = 0xC000 // generate random, then bitwise and kk, store to vx
+	DRW_VX_VY_N   = 0xD000 // generate random, then bitwise and kk, store to vx
+	VX_KEY_OPS    = 0xE000 // series of skip instructions for key presses
+	TIMING_OPS    = 0xF000 // series of timing instructions
 
-	// series of instructions under MOD_VX_VY_OPS
+	// sub instructions under MOD_VX_VY_OPS
 	LD_VX_VY   = 0x0000 // store vx in vy
 	OR_VX_VY   = 0x0001 // bitwise vx or vy
 	AND_VX_VY  = 0x0002 // bitwise vx and vy
@@ -77,6 +81,14 @@ const (
 	SHR_VX_VY  = 0x0006
 	SUBN_VX_VY = 0x0007
 	SHL_VX_VY  = 0x000E
+
+	// sub instructions under VX_KEY_OPS
+	SEQ_VX_KEY_PR = 0x009E // skip if vx contains key pressed
+	SNE_VX_KEY_PR = 0x00A1 // skip if vx does not contain key pressed
+
+	// sub instructions under TIMING_OPS
+	LD_VX_DT = 0x0007 // vx set to delay timer
+	LD_VX_K  = 0x000A // wait for key press, store in vx
 
 	// registers
 	V0 = 0x00
@@ -95,7 +107,11 @@ type emulator struct {
 	// program counter
 	pc uint16
 
-	display []uint8
+	// delay timer
+	dt uint8
+
+	display  []uint8
+	keyboard []uint8
 }
 
 func Create() *emulator {
@@ -103,7 +119,8 @@ func Create() *emulator {
 		registers: make([]uint8, REGISTERS),
 		mem:       make([]uint8, MEM_SIZE),
 		stack:     make([]uint16, STACK_SIZE),
-		display:   make([]uint8, SCREEN_SIZE),
+		display:   make([]uint8, DISPLAY_SIZE),
+		keyboard:  make([]uint8, KEYBOARD_SIZE),
 	}
 }
 
@@ -207,7 +224,25 @@ func (em *emulator) execute(inst uint16) error {
 	case JMP_V0:
 		em.jmpV0(n2 | n3 | n4)
 	case RND_VX_KK:
-		em.rndVxKK(n1, n3|n4)
+		em.rndVxKK(n2, n3|n4)
+	case DRW_VX_VY_N:
+		err = em.drawVxVyN(n2, n3, n4)
+	case VX_KEY_OPS:
+		if n3|n4 == SEQ_VX_KEY_PR {
+			err = em.seqVxKey(n2)
+		} else if n3|n4 == SNE_VX_KEY_PR {
+			err = em.sneVxKey(n2)
+		} else {
+			err = fmt.Errorf("opcode not found: %x", inst)
+		}
+	case TIMING_OPS:
+		switch n3 | n4 {
+		case LD_VX_DT:
+			err = em.ldVxDt(n2)
+		case LD_VX_K:
+			err = em.ldVxK(n2)
+		}
+
 	}
 
 	return err
@@ -446,7 +481,88 @@ func (em *emulator) rndVxKK(x uint16, kk uint16) {
 	em.registers[x] = r & uint8(kk)
 }
 
-// TODO remove this
-func (em *emulator) temp(x uint16, y uint16) error {
+// 0xDxyn
+// draw a sprite at register X and Y location, of N height
+func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) error {
+	if x >= REGISTERS || y >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	// 64x32 display
+	cx := em.registers[x] & 63 // clamp cx to display width
+	cy := em.registers[y] & 31 // clamp cy to display height
+	em.registers[VF] = 0       // clear collision flag
+
+	// rows
+	for i := uint16(0); i < n; i++ {
+		row := em.mem[em.i+i]
+		// cols
+		for j := uint16(0); j < 8; j++ {
+			// sprite bit
+			// row & (0b1000_0000 >> j)
+			spb := row & (0x80 >> j)
+			if spb == 0 {
+				continue
+			}
+			// display index
+			// 2d -> 1d
+			di := (uint16(cx) + j) + ((uint16(cy) + i) * 64)
+			if uint16(cx)+j < 64 && uint16(cy)+i < 32 {
+				if em.display[di] == 1 {
+					em.display[di] = 0   // Pixel turned off
+					em.registers[VF] = 1 // Collision detected
+				} else {
+					em.display[di] = 1 // Pixel turned on
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// 0xEX9E
+// skip the next instruction if the key at register X was pressed
+func (em *emulator) seqVxKey(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	key := em.registers[x]
+	// check if key pressed
+	if em.keyboard[key] == 1 {
+		em.pc += 2
+	}
+	return nil
+}
+
+// 0xEXA1
+// skip the next instruction if the key at register X was not pressed
+func (em *emulator) sneVxKey(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	key := em.registers[x]
+	// check if key pressed
+	if em.keyboard[key] == 0 {
+		em.pc += 2
+	}
+	return nil
+}
+
+// 0xFX07
+// set the value of register X to delay timer
+func (em *emulator) ldVxDt(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	em.registers[x] = em.dt
+	return nil
+}
+
+// 0xFX0A
+// await a keypress, and assign keycode to register X
+func (em *emulator) ldVxK(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	// em.registers[x] = em.dt
 	return nil
 }
