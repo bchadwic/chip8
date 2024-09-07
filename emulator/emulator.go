@@ -38,11 +38,11 @@ import (
 */
 
 const (
-	REGISTERS     = 16
-	MEM_SIZE      = 4096
-	STACK_SIZE    = 16
-	DISPLAY_SIZE  = 8 * 15
-	KEYBOARD_SIZE = 16
+	REGISTERS    = 16
+	MEM_SIZE     = 4096
+	STACK_SIZE   = 16
+	DISPLAY_SIZE = 8 * 15
+	KEYPAD_SIZE  = 4 * 4
 
 	// niblet masks
 	N1_MASK = 0xF000
@@ -110,8 +110,8 @@ type emulator struct {
 	// delay timer
 	dt uint8
 
-	display  []uint8
-	keyboard []uint8
+	display []uint8
+	keypad  []uint8
 }
 
 func Create() *emulator {
@@ -120,7 +120,7 @@ func Create() *emulator {
 		mem:       make([]uint8, MEM_SIZE),
 		stack:     make([]uint16, STACK_SIZE),
 		display:   make([]uint8, DISPLAY_SIZE),
-		keyboard:  make([]uint8, KEYBOARD_SIZE),
+		keypad:    make([]uint8, KEYPAD_SIZE),
 	}
 }
 
@@ -527,7 +527,7 @@ func (em *emulator) seqVxKey(x uint16) error {
 	}
 	key := em.registers[x]
 	// check if key pressed
-	if em.keyboard[key] == 1 {
+	if em.keypad[key] == 1 {
 		em.pc += 2
 	}
 	return nil
@@ -541,7 +541,7 @@ func (em *emulator) sneVxKey(x uint16) error {
 	}
 	key := em.registers[x]
 	// check if key pressed
-	if em.keyboard[key] == 0 {
+	if em.keypad[key] == 0 {
 		em.pc += 2
 	}
 	return nil
