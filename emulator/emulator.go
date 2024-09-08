@@ -8,6 +8,8 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/bchadwic/chip8/emulator/display"
+	"github.com/bchadwic/chip8/emulator/display/emit"
 	"github.com/bchadwic/chip8/emulator/keypad"
 )
 
@@ -41,10 +43,16 @@ import (
 */
 
 const (
-	REGISTERS    = 16
-	MEM_SIZE     = 4096
-	STACK_SIZE   = 16
-	DISPLAY_SIZE = 64 * 32
+	REGISTERS  = 16
+	MEM_SIZE   = 4096
+	STACK_SIZE = 16
+
+	ROWS = 32
+	COLS = 64
+
+	FONT_ADDR = 0x050
+	ROM_ADDR  = 0x200
+
 	// TODO possibly move / remove?
 	KEYPAD_SIZE = 4 * 4
 
@@ -142,29 +150,28 @@ type emulator struct {
 	// sound timer
 	st uint8
 
-	display []uint8
+	display display.Display
 	keypad  keypad.Keypad
 }
 
 func Create() *emulator {
 	mem := make([]uint8, MEM_SIZE)
 	for i := 0; i < len(fonts); i++ {
-		mem[i+0x050] = fonts[i]
+		mem[i+FONT_ADDR] = fonts[i]
 	}
 	return &emulator{
 		registers: make([]uint8, REGISTERS),
 		mem:       mem,
 		stack:     make([]uint16, STACK_SIZE),
-		// TODO implement keypad and display
-		display: make([]uint8, DISPLAY_SIZE),
+		display:   display.Create(ROWS, COLS),
 	}
 }
 
 func (em *emulator) Load(rom []uint8) {
 	for i := 0; i < len(rom); i++ {
-		em.mem[i+0x200] = rom[i]
+		em.mem[i+ROM_ADDR] = rom[i]
 	}
-	em.pc = 0x200
+	em.pc = ROM_ADDR
 }
 
 func (em *emulator) Start() {
@@ -319,9 +326,7 @@ func (em *emulator) execute(inst uint16) error {
 
 // clear screen
 func (em *emulator) cls() {
-	for i := 0; i < len(em.display); i++ {
-		em.display[i] = 0
-	}
+	em.display.Clear()
 }
 
 // return from subroutine
@@ -401,13 +406,7 @@ func (em *emulator) ldVxKK(x uint16, kk uint16) error {
 // 0x7XKK
 // add the value of KK to register X
 func (em *emulator) addVxKK(x uint16, kk uint16) error {
-	fmt.Printf("1 - %d\n", x)
-	fmt.Printf("1 - %x\n", x)
-	fmt.Printf("1 - %08b\n", x)
 	x >>= 8
-	fmt.Printf("2 - %d\n", x)
-	fmt.Printf("2 - %x\n", x)
-	fmt.Printf("2 - %08b\n", x)
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -589,32 +588,30 @@ func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) error {
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
-	// 64x32 display
-	cx := em.registers[x] & 63 // clamp cx to display width
-	cy := em.registers[y] & 31 // clamp cy to display height
-	em.registers[VF] = 0       // clear collision flag
+	startc := em.registers[x] % COLS // clamp cx to display width
+	startr := em.registers[y] % ROWS // clamp cy to display height
+	em.registers[VF] = 0             // clear collision flag
 
-	// rows
-	for i := uint16(0); i < n; i++ {
-		row := em.mem[em.i+i]
-		// cols
-		for j := uint16(0); j < 8; j++ {
-			// sprite bit
-			// row & (0b1000_0000 >> j)
-			// TODO look into this
-			spb := (row >> (7 - j)) & 1
+	for rowi := uint8(0); rowi < uint8(n); rowi++ {
+		row := em.mem[em.i+uint16(rowi)]
+		// loop through each bit in a byte (8)
+		for coli := uint8(0); coli < 8; coli++ {
+			// read sprite bits left to right
+			spb := row & (0b1000_0000 >> coli)
 			if spb == 0 {
 				continue
 			}
-			// display index
-			// 2d -> 1d
-			di := (uint16(cx) + j) + ((uint16(cy) + i) * 64)
-			if uint16(cx)+j < 64 && uint16(cy)+i < 32 {
-				if em.display[di] == 1 {
-					em.display[di] = 0   // Pixel turned off
+
+			pixelr := (startr + rowi) * COLS
+			pixelc := startc + coli
+
+			pixel := em.display.Get(pixelr, pixelc)
+			if startc+coli < COLS && startr+rowi < ROWS {
+				if pixel {
+					em.display.Set(emit.OFF, pixelr, pixelc)
 					em.registers[VF] = 1 // Collision detected
 				} else {
-					em.display[di] = 1 // Pixel turned on
+					em.display.Set(emit.ON, pixelr, pixelc)
 				}
 			}
 		}
