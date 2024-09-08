@@ -1,11 +1,14 @@
 package emulator
 
+// https://github.com/plukraine/c8
 import (
 	"errors"
 	"fmt"
 	"log"
 	"math/rand"
 	"time"
+
+	"github.com/bchadwic/chip8/emulator/keypad"
 )
 
 /*
@@ -41,8 +44,9 @@ const (
 	REGISTERS    = 16
 	MEM_SIZE     = 4096
 	STACK_SIZE   = 16
-	DISPLAY_SIZE = 8 * 15
-	KEYPAD_SIZE  = 4 * 4
+	DISPLAY_SIZE = 64 * 32
+	// TODO possibly move / remove?
+	KEYPAD_SIZE = 4 * 4
 
 	// niblet masks
 	N1_MASK = 0xF000
@@ -87,13 +91,39 @@ const (
 	SNE_VX_KEY_PR = 0x00A1 // skip if vx does not contain key pressed
 
 	// sub instructions under TIMING_OPS
-	LD_VX_DT = 0x0007 // vx set to delay timer
+	LD_VX_DT = 0x0007 // set vx to delay timer
 	LD_VX_K  = 0x000A // wait for key press, store in vx
+	LD_DT_VX = 0x0015 // set delay timer to vx
+	LD_ST_VX = 0x0018 // set sound timer to vx
+	ADD_I_VX = 0x001E // i + vx and set to i
+	LD_F_VX  = 0x0029 // set i to sprite stored in vx
+	LD_B_VX  = 0x0033 // i, i+1, and i+2 represent BCD of vx
+	LD_I_VX  = 0x0055 // load memory i-n with the values stored in v0-vx
+	LD_VX_I  = 0x0065 // load v0-vx with values stored in memory i-n
 
 	// registers
 	V0 = 0x00
 	VF = 0x0F // used for subtraction borrow, addition carry, or pixel collision
 )
+
+var fonts []uint8 = []uint8{
+	0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+	0x20, 0x60, 0x20, 0x20, 0x70, // 1
+	0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+	0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+	0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+	0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+	0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+	0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+	0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+	0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+	0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+	0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+	0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+	0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+	0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+	0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+}
 
 type emulator struct {
 	registers []uint8
@@ -109,19 +139,32 @@ type emulator struct {
 
 	// delay timer
 	dt uint8
+	// sound timer
+	st uint8
 
 	display []uint8
-	keypad  []uint8
+	keypad  keypad.Keypad
 }
 
 func Create() *emulator {
+	mem := make([]uint8, MEM_SIZE)
+	for i := 0; i < len(fonts); i++ {
+		mem[i+0x050] = fonts[i]
+	}
 	return &emulator{
 		registers: make([]uint8, REGISTERS),
-		mem:       make([]uint8, MEM_SIZE),
+		mem:       mem,
 		stack:     make([]uint16, STACK_SIZE),
-		display:   make([]uint8, DISPLAY_SIZE),
-		keypad:    make([]uint8, KEYPAD_SIZE),
+		// TODO implement keypad and display
+		display: make([]uint8, DISPLAY_SIZE),
 	}
+}
+
+func (em *emulator) Load(rom []uint8) {
+	for i := 0; i < len(rom); i++ {
+		em.mem[i+0x200] = rom[i]
+	}
+	em.pc = 0x200
 }
 
 func (em *emulator) Start() {
@@ -160,7 +203,9 @@ func (em *emulator) execute(inst uint16) error {
 	n3 := inst & N3_MASK
 	n4 := inst & N4_MASK
 	var err error = nil
+	fmt.Printf("%x\n", inst)
 
+	inc := true
 	switch n1 {
 	case CLS_OR_RET:
 		switch inst {
@@ -168,20 +213,26 @@ func (em *emulator) execute(inst uint16) error {
 			em.cls()
 		case RET:
 			err = em.ret()
+			inc = false
 		default:
 			err = fmt.Errorf("opcode not found: %x", inst)
 		}
 	case JMP:
 		em.jmp(n2 | n3 | n4)
+		inc = false
 	case CALL:
 		em.call(n2 | n3 | n4)
+		inc = false
 	case SEQ_VX_NN:
 		err = em.seqVxNN(n2, n3|n4)
+		inc = false
 	case SNE_VX_NN:
 		err = em.sneVxNN(n2, n3|n4)
+		inc = false
 	case SEQ_VX_VY:
 		if n4 == 0 {
 			err = em.seqVxVy(n2, n3)
+			inc = false
 		} else {
 			err = fmt.Errorf("opcode not found: %x", inst)
 		}
@@ -224,7 +275,8 @@ func (em *emulator) execute(inst uint16) error {
 	case JMP_V0:
 		em.jmpV0(n2 | n3 | n4)
 	case RND_VX_KK:
-		em.rndVxKK(n2, n3|n4)
+		err = em.rndVxKK(n2, n3|n4)
+		inc = false
 	case DRW_VX_VY_N:
 		err = em.drawVxVyN(n2, n3, n4)
 	case VX_KEY_OPS:
@@ -241,10 +293,27 @@ func (em *emulator) execute(inst uint16) error {
 			err = em.ldVxDt(n2)
 		case LD_VX_K:
 			err = em.ldVxK(n2)
+		case LD_DT_VX:
+			err = em.ldDtVx(n2)
+		case LD_ST_VX:
+			err = em.ldStVx(n2)
+		case ADD_I_VX:
+			err = em.addIVx(n2)
+		case LD_F_VX:
+			err = em.ldFVx(n2)
+		case LD_B_VX:
+			err = em.ldBVx(n2)
+		case LD_I_VX:
+			err = em.ldIVx(n2)
+		case LD_VX_I:
+			err = em.ldVxI(n2)
+		default:
+			err = fmt.Errorf("opcode not found: %x", inst)
 		}
-
 	}
-
+	if inc {
+		em.pc += 2
+	}
 	return err
 }
 
@@ -321,6 +390,7 @@ func (em *emulator) seqVxVy(x uint16, y uint16) error {
 // 0x6XKK
 // load register X with the value of KK
 func (em *emulator) ldVxKK(x uint16, kk uint16) error {
+	x >>= 8
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -331,6 +401,7 @@ func (em *emulator) ldVxKK(x uint16, kk uint16) error {
 // 0x7XKK
 // add the value of KK to register X
 func (em *emulator) addVxKK(x uint16, kk uint16) error {
+	x >>= 8
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -341,6 +412,8 @@ func (em *emulator) addVxKK(x uint16, kk uint16) error {
 // 0x8xy0
 // store register X value in register Y
 func (em *emulator) ldVxVy(x uint16, y uint16) error {
+	x >>= 8
+	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -351,6 +424,8 @@ func (em *emulator) ldVxVy(x uint16, y uint16) error {
 // 0x8xy1
 // bitwise register X or Y, then store to register X
 func (em *emulator) orVxVy(x uint16, y uint16) error {
+	x >>= 8
+	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -361,6 +436,8 @@ func (em *emulator) orVxVy(x uint16, y uint16) error {
 // 0x8xy2
 // bitwise register X and Y, then store to register X
 func (em *emulator) andVxVy(x uint16, y uint16) error {
+	x >>= 8
+	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -371,6 +448,8 @@ func (em *emulator) andVxVy(x uint16, y uint16) error {
 // 0x8xy3
 // bitwise register X xor Y, then store to register X
 func (em *emulator) xorVxVy(x uint16, y uint16) error {
+	x >>= 8
+	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -382,6 +461,8 @@ func (em *emulator) xorVxVy(x uint16, y uint16) error {
 // add register X and Y, then store to register X
 // if overflow occurs, set VF register to 1
 func (em *emulator) addVxVy(x uint16, y uint16) error {
+	x >>= 8
+	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -397,6 +478,8 @@ func (em *emulator) addVxVy(x uint16, y uint16) error {
 // subtract register Y from X, then store to register X
 // if underflow occurs, set VF register to 0, otherwise 1
 func (em *emulator) subVxVy(x uint16, y uint16) error {
+	x >>= 8
+	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -414,6 +497,7 @@ func (em *emulator) subVxVy(x uint16, y uint16) error {
 // store the LSB of the value stored in register X to VF
 // then right shift the value of register X by 1, then store to register X
 func (em *emulator) shrVxVy(x uint16, _ uint16) error {
+	x >>= 8
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -426,7 +510,9 @@ func (em *emulator) shrVxVy(x uint16, _ uint16) error {
 // subtract register X from Y, then store to register X
 // if underflow occurs, set VF register to 0, otherwise 1
 func (em *emulator) subnVxVy(x uint16, y uint16) error {
-	if x >= REGISTERS {
+	x >>= 8
+	y >>= 4
+	if x >= REGISTERS && y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
 	if em.registers[y] >= em.registers[x] {
@@ -442,6 +528,7 @@ func (em *emulator) subnVxVy(x uint16, y uint16) error {
 // store the MSB of the value stored in register X to VF
 // then left shift the value of register X by 1, then store to register X
 func (em *emulator) shlVxVy(x uint16, _ uint16) error {
+	x >>= 8
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -453,6 +540,8 @@ func (em *emulator) shlVxVy(x uint16, _ uint16) error {
 // 0x9xy0
 // skip to next instruction set if register X is NOT equal to register Y
 func (em *emulator) sneVxVy(x uint16, y uint16) error {
+	x >>= 8
+	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -476,14 +565,21 @@ func (em *emulator) jmpV0(addr uint16) {
 
 // 0xCxkk
 // set register X to the value of a random number bitwise and KK
-func (em *emulator) rndVxKK(x uint16, kk uint16) {
+func (em *emulator) rndVxKK(x uint16, kk uint16) error {
+	x >>= 8
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
 	r := uint8(rand.Intn(0xFF))
 	em.registers[x] = r & uint8(kk)
+	return nil
 }
 
 // 0xDxyn
 // draw a sprite at register X and Y location, of N height
 func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) error {
+	x >>= 8
+	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -499,7 +595,7 @@ func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) error {
 		for j := uint16(0); j < 8; j++ {
 			// sprite bit
 			// row & (0b1000_0000 >> j)
-			spb := row & (0x80 >> j)
+			spb := (row >> (7 - j)) & 1
 			if spb == 0 {
 				continue
 			}
@@ -526,8 +622,8 @@ func (em *emulator) seqVxKey(x uint16) error {
 		return errors.New("register index out of bounds")
 	}
 	key := em.registers[x]
-	// check if key pressed
-	if em.keypad[key] == 1 {
+	// check if key is pressed
+	if em.keypad.IsPressed(key) {
 		em.pc += 2
 	}
 	return nil
@@ -540,8 +636,8 @@ func (em *emulator) sneVxKey(x uint16) error {
 		return errors.New("register index out of bounds")
 	}
 	key := em.registers[x]
-	// check if key pressed
-	if em.keypad[key] == 0 {
+	// check if key is not pressed
+	if !em.keypad.IsPressed(key) {
 		em.pc += 2
 	}
 	return nil
@@ -563,6 +659,104 @@ func (em *emulator) ldVxK(x uint16) error {
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
-	// em.registers[x] = em.dt
+	kaddr := em.keypad.GetNextKey()
+	em.registers[x] = kaddr
+	return nil
+}
+
+// 0xFX15
+// set the delay timer to the value of register X
+func (em *emulator) ldDtVx(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	em.dt = em.registers[x]
+	return nil
+}
+
+// 0xFX18
+// set the sound timer to the value of register X
+func (em *emulator) ldStVx(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	em.st = em.registers[x]
+	return nil
+}
+
+// 0xFX1E
+// add i and value of register X, then store to i
+func (em *emulator) addIVx(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	em.i += em.i + uint16(em.registers[x])
+	return nil
+}
+
+// 0xFX29
+// add i and value of register X, then store to i
+func (em *emulator) ldFVx(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	em.i = uint16(em.registers[x] * 5)
+	return nil
+}
+
+// 0xFX33
+// store BCD representation of the value stored in register X
+// in memory locations I, I+1, and I+2.
+func (em *emulator) ldBVx(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	// TODO understand this more
+	n := uint(em.registers[x])
+	b := uint(0)
+
+	// perform 8 shifts
+	for i := uint(0); i < 8; i++ {
+		if (b>>0)&0xF >= 5 {
+			b += 3
+		}
+		if (b>>4)&0xF >= 5 {
+			b += 3 << 4
+		}
+		if (b>>8)&0xF >= 5 {
+			b += 3 << 8
+		}
+		// apply shift, pull next bit
+		b = (b << 1) | (n >> (7 - i) & 1)
+	}
+
+	// write to memory
+	em.mem[em.i] = byte(b>>8) & 0xF
+	em.mem[em.i+1] = byte(b>>4) & 0xF
+	em.mem[em.i+2] = byte(b>>0) & 0xF
+	return nil
+}
+
+// 0xFX55
+// store the values in registers 0-X to memory starting at i
+func (em *emulator) ldIVx(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	for i := uint16(0); i < x; i++ {
+		em.mem[em.i+i] = em.registers[i]
+	}
+	return nil
+}
+
+// 0xFX65
+// store the values in memory starting at i into registers 0-X
+func (em *emulator) ldVxI(x uint16) error {
+	if x >= REGISTERS {
+		return errors.New("register index out of bounds")
+	}
+	for i := uint16(0); i < x; i++ {
+		em.registers[i] = em.mem[em.i+i]
+	}
 	return nil
 }

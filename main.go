@@ -1,11 +1,30 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/bchadwic/chip8/emulator"
+)
 
 func main() {
-	var x uint16 = 0x80
-	fmt.Printf("%08b\n", x)
-	fmt.Printf("%x\n", x)
-	fmt.Printf("%d\n", x)
-
+	f, err := os.Open("ibm.ch8")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	fmt.Println(fi.Size())
+	rom := make([]uint8, fi.Size())
+	_, err = f.Read(rom)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	em := emulator.Create()
+	em.Load(rom)
+	em.Start()
 }
