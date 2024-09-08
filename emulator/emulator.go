@@ -329,7 +329,7 @@ func (em *emulator) execute(inst uint16) error {
 
 // clear screen
 func (em *emulator) cls() {
-	fmt.Printf("%04X - clear screen\n", CLS)
+	// fmt.Printf("%04X - clear screen\n", CLS)
 	em.display.Clear()
 }
 
@@ -399,7 +399,7 @@ func (em *emulator) seqVxVy(x uint16, y uint16) error {
 // 0x6XKK
 // load register X with the value of KK
 func (em *emulator) ldVxKK(x uint16, kk uint16) error {
-	fmt.Printf("%04X - load register %04X with value %04X\n", LD_VX_KK|x|kk, x>>8, kk)
+	// fmt.Printf("%04X - load register %04X with value %04X\n", LD_VX_KK|x|kk, x>>8, kk)
 	x >>= 8
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
@@ -564,7 +564,7 @@ func (em *emulator) sneVxVy(x uint16, y uint16) error {
 // 0xAnnn
 // set the value of register I to addr (nnn)
 func (em *emulator) ldI(addr uint16) {
-	fmt.Printf("%04X - set register I to %04X\n", LD_I|addr, addr)
+	// fmt.Printf("%04X - set register I to %04X\n", LD_I|addr, addr)
 	em.i = addr
 }
 
@@ -589,24 +589,26 @@ func (em *emulator) rndVxKK(x uint16, kk uint16) error {
 // 0xDxyn
 // draw a sprite at register X and Y location, of N height
 func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) error {
-	fmt.Printf(
-		"%04X - draw sprite at register X %04X and Y %04X coordinates and height of N %04X\n",
-		DRW_VX_VY_N|x|y|n, x>>8, y>>4, n,
-	)
+	// fmt.Printf(
+	// 	"%04X - draw sprite at register X %04X and Y %04X coordinates and height of N %04X\n",
+	// 	DRW_VX_VY_N|x|y|n, x>>8, y>>4, n,
+	// )
 	x >>= 8
 	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
-	fmt.Printf("register X = %04X - %d\n", em.registers[x]%COLS, em.registers[x]%COLS)
-	fmt.Printf("register Y = %04X - %d\n", em.registers[y]%ROWS, em.registers[y]%ROWS)
-	fmt.Printf("register I = %04X - %d\n", em.i, em.i)
+	// fmt.Printf("register X = %04X - %d\n", em.registers[x]%COLS, em.registers[x]%COLS)
+	// fmt.Printf("register Y = %04X - %d\n", em.registers[y]%ROWS, em.registers[y]%ROWS)
+	// fmt.Printf("register I = %04X - %d\n", em.i, em.i)
 	startc := em.registers[x] % COLS // clamp cx to display width
 	startr := em.registers[y] % ROWS // clamp cy to display height
 	em.registers[VF] = 0             // clear collision flag
 
 	for rowi := uint8(0); rowi < uint8(n); rowi++ {
-		row := em.mem[em.i+uint16(rowi)]
+		index := em.i + uint16(rowi)
+		row := em.mem[index]
+		// fmt.Printf("memory[%04X] = %04X - %d\n", index, row, row)
 		// loop through each bit in a byte (8)
 		for coli := uint8(0); coli < 8; coli++ {
 			// read sprite bits left to right
@@ -615,8 +617,13 @@ func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) error {
 				continue
 			}
 
-			pixelr := (startr + rowi) * COLS
+			pixelr := (startr + rowi) % COLS
 			pixelc := startc + coli
+			// fmt.Printf(
+			// 	"pixelr - (%d + %d) * %d = %d, pixelc - %d + %d = %d\n",
+			// 	startr, rowi, COLS, pixelr,
+			// 	startc, coli, pixelc,
+			// )
 
 			pixel := em.display.Get(pixelr, pixelc)
 			if startc+coli < COLS && startr+rowi < ROWS {

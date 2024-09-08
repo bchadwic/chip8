@@ -63,10 +63,10 @@ func (d *display) update(window draw.Window) {
 		if pixel == emit.ON {
 			c = draw.White
 		} else {
-			c = draw.DarkRed
+			c = draw.Black
 		}
 		row := i / d.cols
 		col := i % d.cols
-		window.DrawRect(col*SCALE, row*SCALE, 10, 10, c)
+		window.FillRect(col*SCALE, row*SCALE, 10, 10, c)
 	}
 }
