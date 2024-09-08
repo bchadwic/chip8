@@ -239,7 +239,7 @@ func (em *emulator) execute(inst uint16) error {
 	case LD_VX_KK:
 		err = em.ldVxKK(n2, n3|n4)
 	case ADD_VX_KK:
-		err = em.addVxKK(n1, n2|n4)
+		err = em.addVxKK(n2, n3|n4)
 	// TODO test these functions
 	case MOD_VX_VY_OPS:
 		switch n4 {
@@ -401,7 +401,13 @@ func (em *emulator) ldVxKK(x uint16, kk uint16) error {
 // 0x7XKK
 // add the value of KK to register X
 func (em *emulator) addVxKK(x uint16, kk uint16) error {
+	fmt.Printf("1 - %d\n", x)
+	fmt.Printf("1 - %x\n", x)
+	fmt.Printf("1 - %08b\n", x)
 	x >>= 8
+	fmt.Printf("2 - %d\n", x)
+	fmt.Printf("2 - %x\n", x)
+	fmt.Printf("2 - %08b\n", x)
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -595,6 +601,7 @@ func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) error {
 		for j := uint16(0); j < 8; j++ {
 			// sprite bit
 			// row & (0b1000_0000 >> j)
+			// TODO look into this
 			spb := (row >> (7 - j)) & 1
 			if spb == 0 {
 				continue
