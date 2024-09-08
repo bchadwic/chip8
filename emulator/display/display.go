@@ -1,7 +1,6 @@
 package display
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/bchadwic/chip8/emulator/display/emit"
@@ -10,6 +9,7 @@ import (
 
 type Display interface {
 	Clear()
+	Start()
 	Set(e emit.Emit, row, col uint8)
 	Get(row, col uint8) emit.Emit
 }
@@ -30,25 +30,24 @@ func Create(rows, cols uint8) Display {
 		cols:   icols,
 		screen: make([]emit.Emit, irows*icols),
 	}
-	go func() {
-		err := draw.RunWindow("CHIP-8", icols*SCALE, irows*SCALE, display.update)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-	}()
 	return display
 }
 
+func (d *display) Start() {
+	err := draw.RunWindow("CHIP-8", d.cols*SCALE, d.rows*SCALE, d.update)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+}
+
 func (d *display) Clear() {
-	fmt.Println("size of screen!!")
-	fmt.Println(len(d.screen))
 	for i := 0; i < d.rows*d.cols; i++ {
 		d.screen[i] = emit.OFF
 	}
 }
 
 func (d *display) Set(e emit.Emit, row, col uint8) {
-	i := col + uint8(d.cols)*row
+	i := int(row)*d.cols + int(col)
 	d.screen[i] = e
 }
 
@@ -60,14 +59,14 @@ func (d *display) Get(row, col uint8) emit.Emit {
 func (d *display) update(window draw.Window) {
 	for i := 0; i < d.rows*d.cols; i++ {
 		pixel := d.screen[i]
-		var fill draw.Color
+		var c draw.Color
 		if pixel == emit.ON {
-			fill = draw.White
+			c = draw.White
 		} else {
-			fill = draw.Black
+			c = draw.DarkRed
 		}
-		col := i % d.cols
 		row := i / d.cols
-		window.FillRect(col+(col*SCALE), row+(row*SCALE), 10, 10, fill)
+		col := i % d.cols
+		window.DrawRect(col*SCALE, row*SCALE, 10, 10, c)
 	}
 }

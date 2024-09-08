@@ -159,11 +159,13 @@ func Create() *emulator {
 	for i := 0; i < len(fonts); i++ {
 		mem[i+FONT_ADDR] = fonts[i]
 	}
+	display := display.Create(ROWS, COLS)
+	go display.Start()
 	return &emulator{
 		registers: make([]uint8, REGISTERS),
 		mem:       mem,
 		stack:     make([]uint16, STACK_SIZE),
-		display:   display.Create(ROWS, COLS),
+		display:   display,
 	}
 }
 
@@ -198,8 +200,10 @@ func (em *emulator) fetch() (uint16, error) {
 		return 0, fmt.Errorf("pc out of memory bounds: %d", em.pc)
 	}
 	p1 := em.mem[em.pc]
+	// fmt.Printf("%02x ", p1)
 	em.pc++
 	p2 := em.mem[em.pc]
+	// fmt.Printf("%02x ", p2)
 	em.pc++
 	return (uint16(p1) << 8) | uint16(p2), nil
 }
@@ -210,9 +214,8 @@ func (em *emulator) execute(inst uint16) error {
 	n3 := inst & N3_MASK
 	n4 := inst & N4_MASK
 	var err error = nil
-	fmt.Printf("%x\n", inst)
 
-	inc := true
+	// inc := true
 	switch n1 {
 	case CLS_OR_RET:
 		switch inst {
@@ -220,26 +223,26 @@ func (em *emulator) execute(inst uint16) error {
 			em.cls()
 		case RET:
 			err = em.ret()
-			inc = false
+			// inc = false
 		default:
 			err = fmt.Errorf("opcode not found: %x", inst)
 		}
 	case JMP:
 		em.jmp(n2 | n3 | n4)
-		inc = false
+		// inc = false
 	case CALL:
 		em.call(n2 | n3 | n4)
-		inc = false
+		// inc = false
 	case SEQ_VX_NN:
 		err = em.seqVxNN(n2, n3|n4)
-		inc = false
+		// inc = false
 	case SNE_VX_NN:
 		err = em.sneVxNN(n2, n3|n4)
-		inc = false
+		// inc = false
 	case SEQ_VX_VY:
 		if n4 == 0 {
 			err = em.seqVxVy(n2, n3)
-			inc = false
+			// inc = false
 		} else {
 			err = fmt.Errorf("opcode not found: %x", inst)
 		}
@@ -283,7 +286,7 @@ func (em *emulator) execute(inst uint16) error {
 		em.jmpV0(n2 | n3 | n4)
 	case RND_VX_KK:
 		err = em.rndVxKK(n2, n3|n4)
-		inc = false
+		// inc = false
 	case DRW_VX_VY_N:
 		err = em.drawVxVyN(n2, n3, n4)
 	case VX_KEY_OPS:
@@ -318,14 +321,15 @@ func (em *emulator) execute(inst uint16) error {
 			err = fmt.Errorf("opcode not found: %x", inst)
 		}
 	}
-	if inc {
-		em.pc += 2
-	}
+	// if inc {
+	// 	em.pc += 2
+	// }
 	return err
 }
 
 // clear screen
 func (em *emulator) cls() {
+	fmt.Printf("%04X - clear screen\n", CLS)
 	em.display.Clear()
 }
 
@@ -395,6 +399,7 @@ func (em *emulator) seqVxVy(x uint16, y uint16) error {
 // 0x6XKK
 // load register X with the value of KK
 func (em *emulator) ldVxKK(x uint16, kk uint16) error {
+	fmt.Printf("%04X - load register %04X with value %04X\n", LD_VX_KK|x|kk, x>>8, kk)
 	x >>= 8
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
@@ -559,6 +564,7 @@ func (em *emulator) sneVxVy(x uint16, y uint16) error {
 // 0xAnnn
 // set the value of register I to addr (nnn)
 func (em *emulator) ldI(addr uint16) {
+	fmt.Printf("%04X - set register I to %04X\n", LD_I|addr, addr)
 	em.i = addr
 }
 
@@ -583,11 +589,18 @@ func (em *emulator) rndVxKK(x uint16, kk uint16) error {
 // 0xDxyn
 // draw a sprite at register X and Y location, of N height
 func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) error {
+	fmt.Printf(
+		"%04X - draw sprite at register X %04X and Y %04X coordinates and height of N %04X\n",
+		DRW_VX_VY_N|x|y|n, x>>8, y>>4, n,
+	)
 	x >>= 8
 	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
+	fmt.Printf("register X = %04X - %d\n", em.registers[x]%COLS, em.registers[x]%COLS)
+	fmt.Printf("register Y = %04X - %d\n", em.registers[y]%ROWS, em.registers[y]%ROWS)
+	fmt.Printf("register I = %04X - %d\n", em.i, em.i)
 	startc := em.registers[x] % COLS // clamp cx to display width
 	startr := em.registers[y] % ROWS // clamp cy to display height
 	em.registers[VF] = 0             // clear collision flag

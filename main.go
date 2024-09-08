@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
@@ -18,7 +17,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	fmt.Println(fi.Size())
 	rom := make([]uint8, fi.Size())
 	_, err = f.Read(rom)
 	if err != nil {
@@ -27,4 +25,9 @@ func main() {
 	em := emulator.Create()
 	em.Load(rom)
 	em.Start()
+	// d := display.Create(32, 64)
+	// d.Set(emit.ON, 3, 5)
+	// d.Set(emit.ON, 0, 0)
+	// d.Set(emit.ON, 25, 25)
+	// d.Start()
 }
