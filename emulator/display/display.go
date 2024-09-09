@@ -1,17 +1,15 @@
 package display
 
 import (
-	"log"
-
 	"github.com/bchadwic/chip8/emulator/display/emit"
-	"github.com/gonutz/prototype/draw"
 )
 
 type Display interface {
 	Clear()
-	Start()
 	Set(e emit.Emit, row, col uint8)
 	Get(row, col uint8) emit.Emit
+	Pixels() chan Pixel
+	WindowSize() (int, int)
 }
 
 const (
@@ -23,6 +21,11 @@ type display struct {
 	screen     []emit.Emit
 }
 
+type Pixel struct {
+	Row, Col int
+	Status   emit.Emit
+}
+
 func Create(rows, cols uint8) Display {
 	irows, icols := int(rows), int(cols)
 	display := &display{
@@ -31,13 +34,6 @@ func Create(rows, cols uint8) Display {
 		screen: make([]emit.Emit, irows*icols),
 	}
 	return display
-}
-
-func (d *display) Start() {
-	err := draw.RunWindow("CHIP-8", d.cols*SCALE, d.rows*SCALE, d.update)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
 }
 
 func (d *display) Clear() {
@@ -56,17 +52,18 @@ func (d *display) Get(row, col uint8) emit.Emit {
 	return d.screen[i]
 }
 
-func (d *display) update(window draw.Window) {
+func (d *display) Pixels() chan Pixel {
+	pixels := make(chan Pixel, d.rows*d.cols)
+	defer close(pixels)
 	for i := 0; i < d.rows*d.cols; i++ {
-		pixel := d.screen[i]
-		var c draw.Color
-		if pixel == emit.ON {
-			c = draw.White
-		} else {
-			c = draw.Black
-		}
 		row := i / d.cols
 		col := i % d.cols
-		window.FillRect(col*SCALE, row*SCALE, 10, 10, c)
+		pixel := Pixel{Row: row, Col: col, Status: d.screen[i]}
+		pixels <- pixel
 	}
+	return pixels
+}
+
+func (d *display) WindowSize() (int, int) {
+	return d.rows, d.cols
 }

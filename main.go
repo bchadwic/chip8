@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	f, err := os.Open("ibm.ch8")
+	f, err := os.Open("keypad.ch8")
 	if err != nil {
 		log.Fatal(err.Error())
 	}
