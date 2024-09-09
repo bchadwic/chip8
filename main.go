@@ -25,9 +25,4 @@ func main() {
 	em := emulator.Create()
 	em.Load(rom)
 	em.Start()
-	// d := display.Create(32, 64)
-	// d.Set(emit.ON, 3, 5)
-	// d.Set(emit.ON, 0, 0)
-	// d.Set(emit.ON, 25, 25)
-	// d.Start()
 }
