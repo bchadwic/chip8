@@ -218,77 +218,102 @@ func (em *emulator) execute(inst uint16) error {
 	n4 := inst & N4_MASK
 	var err error = nil
 
-	fmt.Printf("inst - %04X\n", inst)
+	opcode := ""
 	switch n1 {
 	case CLS_OR_RET:
 		switch inst {
 		case CLS:
+			opcode = "cls"
 			em.cls()
 		case RET:
+			opcode = "ret"
 			err = em.ret()
 		default:
 			err = fmt.Errorf("opcode not found: %x", inst)
 		}
 	case JMP:
+		opcode = "jmp"
 		em.jmp(n2 | n3 | n4)
 	case CALL:
+		opcode = "cal"
 		em.call(n2 | n3 | n4)
 	case SEQ_VX_NN:
+		opcode = "seqVxNN"
 		err = em.seqVxNN(n2, n3|n4)
 	case SNE_VX_NN:
+		opcode = "sneVxNN"
 		err = em.sneVxNN(n2, n3|n4)
 	case SEQ_VX_VY:
 		if n4 == 0 {
+			opcode = "seqVxVy"
 			err = em.seqVxVy(n2, n3)
 		} else {
 			err = fmt.Errorf("opcode not found: %x", inst)
 		}
 	case LD_VX_KK:
+		opcode = "ldVxKK"
 		err = em.ldVxKK(n2, n3|n4)
 	case ADD_VX_KK:
+		opcode = "addVxKK"
 		err = em.addVxKK(n2, n3|n4)
 	// TODO test these functions
 	case MOD_VX_VY_OPS:
 		switch n4 {
 		case LD_VX_VY:
+			opcode = "ldVxKK"
 			err = em.ldVxVy(n2, n3)
 		case OR_VX_VY:
+			opcode = "orVxKK"
 			err = em.orVxVy(n2, n3)
 		case AND_VX_VY:
+			opcode = "andVxKK"
 			err = em.andVxVy(n2, n3)
 		case XOR_VX_VY:
+			opcode = "xorVxKK"
 			err = em.xorVxVy(n2, n3)
 		case ADD_VX_VY:
+			opcode = "addVxKK"
 			err = em.addVxVy(n2, n3)
 		case SUB_VX_VY:
+			opcode = "subVxKK"
 			err = em.subVxVy(n2, n3)
 		case SHR_VX_VY:
+			opcode = "shrVxKK"
 			err = em.shrVxVy(n2, n3)
 		case SUBN_VX_VY:
+			opcode = "subVxKK"
 			err = em.subnVxVy(n2, n3)
 		case SHL_VX_VY:
+			opcode = "shlVxKK"
 			err = em.shlVxVy(n2, n3)
 		default:
 			err = fmt.Errorf("opcode not found: %x", inst)
 		}
 	case SNE_VX_VY:
 		if n4 == 0 {
+			opcode = "sneVxVy"
 			err = em.sneVxVy(n2, n3)
 		} else {
 			err = fmt.Errorf("opcode not found: %x", inst)
 		}
 	case LD_I:
+		opcode = "ldI"
 		em.ldI(n2 | n3 | n4)
 	case JMP_V0:
+		opcode = "jmpV0"
 		em.jmpV0(n2 | n3 | n4)
 	case RND_VX_KK:
+		opcode = "rndVxKK"
 		err = em.rndVxKK(n2, n3|n4)
 	case DRW_VX_VY_N:
+		opcode = "drawVxVyN"
 		err = em.drawVxVyN(n2, n3, n4)
 	case VX_KEY_OPS:
 		if n3|n4 == SEQ_VX_KEY_PR {
+			opcode = "seqVxKeyPr"
 			err = em.seqVxKey(n2)
 		} else if n3|n4 == SNE_VX_KEY_PR {
+			opcode = "sneVxKeyPr"
 			err = em.sneVxKey(n2)
 		} else {
 			err = fmt.Errorf("opcode not found: %x", inst)
@@ -296,27 +321,37 @@ func (em *emulator) execute(inst uint16) error {
 	case TIMING_OPS:
 		switch n3 | n4 {
 		case LD_VX_DT:
+			opcode = "ldVxDt"
 			err = em.ldVxDt(n2)
 		case LD_VX_K:
+			opcode = "ldVxK"
 			err = em.ldVxK(n2)
 		case LD_DT_VX:
+			opcode = "ldDtVx"
 			err = em.ldDtVx(n2)
 		case LD_ST_VX:
+			opcode = "ldStVx"
 			err = em.ldStVx(n2)
 		case ADD_I_VX:
+			opcode = "addIVx"
 			err = em.addIVx(n2)
 		case LD_F_VX:
+			opcode = "addFVx"
 			err = em.ldFVx(n2)
 		case LD_B_VX:
+			opcode = "ldBVx"
 			err = em.ldBVx(n2)
 		case LD_I_VX:
+			opcode = "ldIVx"
 			err = em.ldIVx(n2)
 		case LD_VX_I:
+			opcode = "ldVxI"
 			err = em.ldVxI(n2)
 		default:
 			err = fmt.Errorf("opcode not found: %x", inst)
 		}
 	}
+	em.printByte(opcode, inst)
 	return err
 }
 
@@ -344,11 +379,11 @@ func (em *emulator) jmp(addr uint16) {
 // call subroutine
 func (em *emulator) call(addr uint16) error {
 	// move stack pointer to next position, save current position of program counter
-	em.sp++
 	if em.sp >= STACK_SIZE {
 		return errors.New("stack overflow")
 	}
 	em.stack[em.sp] = em.pc
+	em.sp++
 	em.pc = addr
 	return nil
 }
@@ -557,7 +592,6 @@ func (em *emulator) sneVxVy(x uint16, y uint16) error {
 // 0xAnnn
 // set the value of register I to addr (nnn)
 func (em *emulator) ldI(addr uint16) {
-	// fmt.Printf("%04X - set register I to %04X\n", LD_I|addr, addr)
 	em.i = addr
 }
 
@@ -663,7 +697,6 @@ func (em *emulator) ldVxDt(x uint16) error {
 // await a keypress, and assign keycode to register X
 func (em *emulator) ldVxK(x uint16) error {
 	x >>= 8
-	fmt.Println("here I am")
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -702,6 +735,7 @@ func (em *emulator) addIVx(x uint16) error {
 		return errors.New("register index out of bounds")
 	}
 	em.i += em.i + uint16(em.registers[x])
+	// fmt.Println("addIVx", em.i)
 	return nil
 }
 
@@ -712,7 +746,8 @@ func (em *emulator) ldFVx(x uint16) error {
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
-	em.i = uint16(em.registers[x] * 5)
+	em.i = uint16(em.registers[x]) * 5
+	// fmt.Println("ldFVx", em.registers[x])
 	return nil
 }
 
@@ -770,9 +805,21 @@ func (em *emulator) ldVxI(x uint16) error {
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
-	fmt.Println(em.i)
 	for i := uint16(0); i < x; i++ {
 		em.registers[i] = em.mem[em.i+i]
 	}
 	return nil
+}
+
+func (em *emulator) printByte(s string, b uint16) {
+	fmt.Printf("%-10s: %04X, PC: %04X, I: %04X, SP: %04X\n", s, b, em.pc, em.i, em.sp)
+	for i, register := range em.registers {
+		fmt.Printf("v%01X: %02X, ", i, register)
+	}
+	fmt.Println()
+	for i := 0; i < int(em.sp); i++ {
+		fmt.Printf("%d: %04X, ", i, em.stack[i])
+	}
+	fmt.Println()
+	fmt.Println()
 }
