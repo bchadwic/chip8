@@ -171,6 +171,7 @@ func Create() *emulator {
 		mem:       mem,
 		stack:     make([]uint16, STACK_SIZE),
 		display:   display,
+		keypad:    keypad,
 	}
 }
 
@@ -352,6 +353,7 @@ func (em *emulator) execute(inst uint16) error {
 		}
 	}
 	em.printByte(opcode, inst)
+	// fmt.Scanln()
 	return err
 }
 
@@ -363,10 +365,10 @@ func (em *emulator) cls() {
 
 // return from subroutine
 func (em *emulator) ret() error {
-	if em.sp >= STACK_SIZE {
+	if em.sp >= STACK_SIZE || em.sp-1 >= STACK_SIZE {
 		return fmt.Errorf("stack pointer out of bounds: %d", em.sp)
 	}
-	em.pc = em.stack[em.sp]
+	em.pc = em.stack[em.sp-1]
 	em.sp--
 	return nil
 }
@@ -391,6 +393,7 @@ func (em *emulator) call(addr uint16) error {
 // 0x3XNN
 // skip to next instruction set if register X is equal to NN
 func (em *emulator) seqVxNN(x uint16, nn uint16) error {
+	x >>= 8
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -416,6 +419,8 @@ func (em *emulator) sneVxNN(x uint16, nn uint16) error {
 // 0x5XY0
 // skip to next instruction set if register X is equal to register Y
 func (em *emulator) seqVxVy(x uint16, y uint16) error {
+	x >>= 8
+	y >>= 4
 	if x >= REGISTERS || y >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
@@ -700,6 +705,9 @@ func (em *emulator) ldVxK(x uint16) error {
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
+	if em.keypad == nil {
+		fmt.Println("KEYPAD IS NIL")
+	}
 	kaddr := em.keypad.GetNextKey()
 	em.registers[x] = kaddr
 	return nil
@@ -734,8 +742,7 @@ func (em *emulator) addIVx(x uint16) error {
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
-	em.i += em.i + uint16(em.registers[x])
-	// fmt.Println("addIVx", em.i)
+	em.i += uint16(em.registers[x])
 	return nil
 }
 
@@ -805,7 +812,7 @@ func (em *emulator) ldVxI(x uint16) error {
 	if x >= REGISTERS {
 		return errors.New("register index out of bounds")
 	}
-	for i := uint16(0); i < x; i++ {
+	for i := uint16(0); i <= x; i++ {
 		em.registers[i] = em.mem[em.i+i]
 	}
 	return nil
