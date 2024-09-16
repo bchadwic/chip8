@@ -1,5 +1,7 @@
 package keypad
 
+import "fmt"
+
 type Keypad interface {
 	// checks if the key addr passed in is in the down position
 	IsPressed(kaddr uint8) bool
@@ -44,6 +46,10 @@ func Create() *keypad {
 }
 
 func (kp *keypad) IsPressed(kaddr uint8) bool {
+	if kp.isPressed == nil {
+		fmt.Println("is pressed is nil")
+		return false
+	}
 	return kp.isPressed(kaddr)
 }
 
@@ -52,6 +58,10 @@ func (kp *keypad) IsPressedFunc(f func(kaddr uint8) bool) {
 }
 
 func (kp *keypad) GetNextKey() uint8 {
+	if kp.getNextKey == nil {
+		fmt.Println("get next key is nil")
+		return 0
+	}
 	return kp.getNextKey()
 }
 

@@ -48,7 +48,7 @@ func (d *display) Set(e emit.Emit, row, col uint8) {
 }
 
 func (d *display) Get(row, col uint8) emit.Emit {
-	i := col + uint8(d.cols)*row
+	i := int(row)*d.cols + int(col)
 	return d.screen[i]
 }
 
