@@ -360,9 +360,9 @@ func (em *emulator) execute(inst uint16) error {
 	em.printByte(opcode, inst)
 	// fmt.Scanln()
 	opcodes[opcode] = true
-	for op := range opcodes {
-		fmt.Println(op)
-	}
+	// for op := range opcodes {
+	// 	fmt.Println(op)
+	// }
 	if inc {
 		em.pc += 2
 	}
@@ -663,14 +663,14 @@ func (em *emulator) ldVxI(x uint16) {
 }
 
 func (em *emulator) printByte(s string, b uint16) {
-	fmt.Printf("%-10s: %04X, PC: %04X, I: %04X, SP: %04X\n", s, b, em.pc, em.i, em.sp)
-	for i, register := range em.registers {
-		fmt.Printf("v%01X: %02X, ", i, register)
-	}
-	fmt.Println()
-	for i := 0; i < int(em.sp); i++ {
-		fmt.Printf("%d: %04X, ", i, em.stack[i])
-	}
-	fmt.Println()
-	fmt.Println()
+	// fmt.Printf("%-10s: %04X, PC: %04X, I: %04X, SP: %04X\n", s, b, em.pc, em.i, em.sp)
+	// for i, register := range em.registers {
+	// 	fmt.Printf("v%01X: %02X, ", i, register)
+	// }
+	// fmt.Println()
+	// for i := 0; i < int(em.sp); i++ {
+	// 	fmt.Printf("%d: %04X, ", i, em.stack[i])
+	// }
+	// fmt.Println()
+	// fmt.Println()
 }

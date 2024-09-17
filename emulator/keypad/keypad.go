@@ -62,7 +62,12 @@ func (kp *keypad) GetNextKey() uint8 {
 		fmt.Println("get next key is nil")
 		return 0
 	}
-	return kp.getNextKey()
+	key := uint8(0)
+	for !ValidKeys[key] {
+		key = kp.getNextKey()
+		fmt.Println("key", key)
+	}
+	return key
 }
 
 func (kp *keypad) GetNextKeyFunc(f func() uint8) {

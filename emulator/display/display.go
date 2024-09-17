@@ -8,7 +8,7 @@ type Display interface {
 	Clear()
 	Set(e emit.Emit, row, col uint8)
 	Get(row, col uint8) emit.Emit
-	Pixels() chan Pixel
+	Pixels() []Pixel
 	WindowSize() (int, int)
 }
 
@@ -52,14 +52,13 @@ func (d *display) Get(row, col uint8) emit.Emit {
 	return d.screen[i]
 }
 
-func (d *display) Pixels() chan Pixel {
-	pixels := make(chan Pixel, d.rows*d.cols)
-	defer close(pixels)
+func (d *display) Pixels() []Pixel {
+	pixels := make([]Pixel, d.rows*d.cols)
 	for i := 0; i < d.rows*d.cols; i++ {
 		row := i / d.cols
 		col := i % d.cols
 		pixel := Pixel{Row: row, Col: col, Status: d.screen[i]}
-		pixels <- pixel
+		pixels[i] = pixel
 	}
 	return pixels
 }

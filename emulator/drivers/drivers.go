@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/bchadwic/chip8/emulator/display"
@@ -35,21 +36,30 @@ func (driver *driverContext) Start() {
 }
 
 func (driver *driverContext) update(window draw.Window) {
-	// handle display
-	for pixel := range driver.display.Pixels() {
-		c := draw.Black
-		if pixel.Status == emit.ON {
-			c = draw.White
+	w := make(chan any)
+	defer close(w)
+
+	go func() {
+		// handle display
+		for _, pixel := range driver.display.Pixels() {
+			c := draw.Black
+			if pixel.Status == emit.ON {
+				c = draw.White
+			}
+			window.FillRect(
+				pixel.Col*display.SCALE,
+				pixel.Row*display.SCALE,
+				10,
+				10,
+				c,
+			)
 		}
-		window.FillRect(
-			pixel.Col*display.SCALE,
-			pixel.Row*display.SCALE,
-			10,
-			10,
-			c,
-		)
-	}
+		w <- true
+	}()
+
 	driver.keypad.IsPressedFunc(func(kaddr uint8) bool {
+		fmt.Println("kaddr", kaddr)
+		fmt.Println("draw", draw.Key(kaddr))
 		return window.IsKeyDown(draw.Key(kaddr))
 	})
 	driver.keypad.GetNextKeyFunc(func() uint8 {
@@ -61,4 +71,5 @@ func (driver *driverContext) update(window draw.Window) {
 			return chs[0]
 		}
 	})
+	<-w
 }
