@@ -3,6 +3,7 @@ package drivers
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/bchadwic/chip8/emulator/display"
 	"github.com/bchadwic/chip8/emulator/display/emit"
@@ -36,7 +37,9 @@ func (driver *driverContext) Start() {
 }
 
 func (driver *driverContext) update(window draw.Window) {
-	w := make(chan any)
+	time.Sleep(50 * time.Millisecond)
+	fmt.Println(time.Now().Unix())
+	w := make(chan string)
 	defer close(w)
 
 	go func() {
@@ -54,22 +57,19 @@ func (driver *driverContext) update(window draw.Window) {
 				c,
 			)
 		}
-		w <- true
+		w <- "display"
 	}()
 
-	driver.keypad.IsPressedFunc(func(kaddr uint8) bool {
-		fmt.Println("kaddr", kaddr)
-		fmt.Println("draw", draw.Key(kaddr))
-		return window.IsKeyDown(draw.Key(kaddr))
-	})
-	driver.keypad.GetNextKeyFunc(func() uint8 {
-		for {
-			chs := window.Characters()
-			if len(chs) == 0 {
-				continue
-			}
-			return chs[0]
+	go func() {
+		// handle keypad
+		driver.keypad.Clear()
+		chs := window.Characters()
+		for _, c := range chs {
+			driver.keypad.Set(uint8(c))
 		}
-	})
+		w <- "keypad"
+	}()
+
+	<-w
 	<-w
 }

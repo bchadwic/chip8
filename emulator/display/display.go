@@ -6,8 +6,8 @@ import (
 
 type Display interface {
 	Clear()
-	Set(e emit.Emit, row, col uint8)
 	Get(row, col uint8) emit.Emit
+	Set(e emit.Emit, row, col uint8)
 	Pixels() []Pixel
 	WindowSize() (int, int)
 }
@@ -42,14 +42,14 @@ func (d *display) Clear() {
 	}
 }
 
-func (d *display) Set(e emit.Emit, row, col uint8) {
-	i := int(row)*d.cols + int(col)
-	d.screen[i] = e
-}
-
 func (d *display) Get(row, col uint8) emit.Emit {
 	i := int(row)*d.cols + int(col)
 	return d.screen[i]
+}
+
+func (d *display) Set(e emit.Emit, row, col uint8) {
+	i := int(row)*d.cols + int(col)
+	d.screen[i] = e
 }
 
 func (d *display) Pixels() []Pixel {

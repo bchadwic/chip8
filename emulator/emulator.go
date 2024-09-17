@@ -159,12 +159,10 @@ func Create() *emulator {
 	for i := 0; i < len(fonts); i++ {
 		mem[i+FONT_ADDR] = fonts[i]
 	}
-	// TODO fix this
-	keypad := keypad.Create()
+	keypad := keypad.Create("1234',.paoeu;qjk")
 	display := display.Create(ROWS, COLS)
 	dc := drivers.Create(keypad, display)
 	go dc.Start()
-	// go display.Start()
 	return &emulator{
 		registers: make([]uint8, REGISTERS),
 		mem:       mem,
@@ -182,7 +180,7 @@ func (em *emulator) Load(rom []uint8) {
 }
 
 func (em *emulator) Start() {
-	clock := time.NewTicker(3 * time.Millisecond)
+	clock := time.NewTicker(2 * time.Millisecond)
 	defer clock.Stop()
 
 	for range clock.C {
@@ -572,7 +570,7 @@ func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) {
 func (em *emulator) seqVxKey(x uint16) {
 	key := em.registers[x]
 	// check if key is pressed
-	if em.keypad.IsPressed(key) {
+	if em.keypad.Get(key) {
 		em.pc += 2
 	}
 }
@@ -582,7 +580,7 @@ func (em *emulator) seqVxKey(x uint16) {
 func (em *emulator) sneVxKey(x uint16) {
 	key := em.registers[x]
 	// check if key is not pressed
-	if !em.keypad.IsPressed(key) {
+	if !em.keypad.Get(key) {
 		em.pc += 2
 	}
 }
@@ -596,7 +594,7 @@ func (em *emulator) ldVxDt(x uint16) {
 // 0xFX0A
 // await a keypress, and assign keycode to register X
 func (em *emulator) ldVxK(x uint16) {
-	kaddr := em.keypad.GetNextKey()
+	kaddr := em.keypad.Next()
 	em.registers[x] = kaddr
 }
 
