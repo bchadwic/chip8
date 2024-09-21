@@ -1,9 +1,7 @@
 package drivers
 
 import (
-	"fmt"
 	"log"
-	"time"
 
 	"github.com/bchadwic/chip8/emulator/display"
 	"github.com/bchadwic/chip8/emulator/display/emit"
@@ -37,8 +35,6 @@ func (driver *driverContext) Start() {
 }
 
 func (driver *driverContext) update(window draw.Window) {
-	time.Sleep(50 * time.Millisecond)
-	fmt.Println(time.Now().Unix())
 	w := make(chan string)
 	defer close(w)
 

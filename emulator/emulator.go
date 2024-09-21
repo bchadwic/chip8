@@ -180,10 +180,16 @@ func (em *emulator) Load(rom []uint8) {
 }
 
 func (em *emulator) Start() {
-	clock := time.NewTicker(2 * time.Millisecond)
+	clock := time.NewTicker(1 * time.Millisecond)
 	defer clock.Stop()
 
 	for range clock.C {
+		if em.st > 0 {
+			em.st--
+		}
+		if em.dt > 0 {
+			em.dt--
+		}
 		inst, err := em.fetch()
 		if err != nil {
 			log.Fatal(err.Error())
