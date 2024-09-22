@@ -2,20 +2,25 @@ package drivers
 
 import (
 	"log"
+	"time"
 
 	"github.com/bchadwic/chip8/emulator/display"
 	"github.com/bchadwic/chip8/emulator/display/emit"
 	"github.com/bchadwic/chip8/emulator/keypad"
+	"github.com/bchadwic/chip8/emulator/speaker"
 	"github.com/gonutz/prototype/draw"
 )
 
 type driverContext struct {
+	speaker speaker.Speaker
 	keypad  keypad.Keypad
 	display display.Display
+	frame   int
 }
 
-func Create(keypad keypad.Keypad, display display.Display) *driverContext {
+func Create(speaker speaker.Speaker, keypad keypad.Keypad, display display.Display) *driverContext {
 	return &driverContext{
+		speaker: speaker,
 		keypad:  keypad,
 		display: display,
 	}
@@ -35,6 +40,8 @@ func (driver *driverContext) Start() {
 }
 
 func (driver *driverContext) update(window draw.Window) {
+	time.Sleep(1 * time.Millisecond)
+	driver.frame++
 	w := make(chan string)
 	defer close(w)
 
@@ -57,8 +64,6 @@ func (driver *driverContext) update(window draw.Window) {
 	}()
 
 	go func() {
-		// handle keypad
-		driver.keypad.Clear()
 		chs := window.Characters()
 		for _, c := range chs {
 			driver.keypad.Set(uint8(c))
@@ -66,6 +71,14 @@ func (driver *driverContext) update(window draw.Window) {
 		w <- "keypad"
 	}()
 
+	go func() {
+		if driver.frame%4 == 0 && driver.speaker.IsActive() {
+			window.PlaySoundFile("beep.wav")
+		}
+		w <- "sound"
+	}()
+
+	<-w
 	<-w
 	<-w
 }

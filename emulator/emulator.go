@@ -11,6 +11,7 @@ import (
 	"github.com/bchadwic/chip8/emulator/display/emit"
 	"github.com/bchadwic/chip8/emulator/drivers"
 	"github.com/bchadwic/chip8/emulator/keypad"
+	"github.com/bchadwic/chip8/emulator/speaker"
 )
 
 /*
@@ -150,8 +151,9 @@ type emulator struct {
 	// sound timer
 	st uint8
 
-	display display.Display
+	speaker speaker.Speaker
 	keypad  keypad.Keypad
+	display display.Display
 }
 
 func Create() *emulator {
@@ -159,16 +161,21 @@ func Create() *emulator {
 	for i := 0; i < len(fonts); i++ {
 		mem[i+FONT_ADDR] = fonts[i]
 	}
-	keypad := keypad.Create("1234',.paoeu;qjk")
+
+	speaker := speaker.Create()
+	keypad := keypad.Create()
 	display := display.Create(ROWS, COLS)
-	dc := drivers.Create(keypad, display)
+
+	dc := drivers.Create(speaker, keypad, display)
 	go dc.Start()
+
 	return &emulator{
 		registers: make([]uint8, REGISTERS),
 		mem:       mem,
 		stack:     make([]uint16, STACK_SIZE),
-		display:   display,
+		speaker:   speaker,
 		keypad:    keypad,
+		display:   display,
 	}
 }
 
@@ -180,11 +187,13 @@ func (em *emulator) Load(rom []uint8) {
 }
 
 func (em *emulator) Start() {
-	clock := time.NewTicker(1 * time.Millisecond)
+	clock := time.NewTicker(4 * time.Millisecond)
 	defer clock.Stop()
 
+	i := 0
 	for range clock.C {
-		if em.st > 0 {
+		em.speaker.Set(em.st > 0)
+		if em.speaker.IsActive() {
 			em.st--
 		}
 		if em.dt > 0 {
@@ -198,6 +207,10 @@ func (em *emulator) Start() {
 		if err != nil {
 			log.Fatal(err.Error())
 		}
+		if i%10 == 0 {
+			em.keypad.Clear()
+		}
+		i++
 	}
 }
 
@@ -361,12 +374,7 @@ func (em *emulator) execute(inst uint16) error {
 			return fmt.Errorf("opcode not found: %x", inst)
 		}
 	}
-	em.printByte(opcode, inst)
-	// fmt.Scanln()
 	opcodes[opcode] = true
-	// for op := range opcodes {
-	// 	fmt.Println(op)
-	// }
 	if inc {
 		em.pc += 2
 	}
@@ -558,8 +566,8 @@ func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) {
 
 			pixelr := (startr + rowi) % COLS
 			pixelc := startc + coli
-			pixel := em.display.Get(pixelr, pixelc)
 			if startc+coli < COLS && startr+rowi < ROWS {
+				pixel := em.display.Get(pixelr, pixelc)
 				if pixel {
 					em.display.Set(emit.OFF, pixelr, pixelc)
 					em.registers[VF] = 1 // Collision detected
@@ -664,17 +672,4 @@ func (em *emulator) ldVxI(x uint16) {
 		em.registers[i] = em.mem[em.i+i]
 	}
 	em.i = x + 1
-}
-
-func (em *emulator) printByte(s string, b uint16) {
-	// fmt.Printf("%-10s: %04X, PC: %04X, I: %04X, SP: %04X\n", s, b, em.pc, em.i, em.sp)
-	// for i, register := range em.registers {
-	// 	fmt.Printf("v%01X: %02X, ", i, register)
-	// }
-	// fmt.Println()
-	// for i := 0; i < int(em.sp); i++ {
-	// 	fmt.Printf("%d: %04X, ", i, em.stack[i])
-	// }
-	// fmt.Println()
-	// fmt.Println()
 }

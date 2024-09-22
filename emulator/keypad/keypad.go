@@ -1,9 +1,16 @@
 package keypad
 
 import (
-	"fmt"
 	"sync"
 )
+
+// dvorak to keypad
+var toKeypad map[byte]uint8 = map[byte]uint8{
+	'1': 0x1, '2': 0x2, '3': 0x3, '4': 0xC,
+	'\'': 0x4, ',': 0x5, '.': 0x6, 'p': 0xD,
+	'a': 0x7, 'o': 0x8, 'e': 0x9, 'u': 0xE,
+	';': 0xA, 'q': 0x0, 'j': 0xB, 'k': 0xF,
+}
 
 type Keypad interface {
 	Clear()
@@ -13,52 +20,34 @@ type Keypad interface {
 }
 
 type keypad struct {
-	keys    map[byte]bool
 	pressed map[byte]bool
-	ikeys   []byte
 	mu      sync.Mutex
 }
 
-func Create(keys string) Keypad {
-	mkeys := make(map[byte]bool, len(keys))
-	mpressed := make(map[byte]bool, len(keys))
-	ikeys := make([]byte, len(keys))
-	for i, k := range keys {
-		bk := byte(k)
-		mkeys[bk] = true
-		ikeys[i] = bk
-	}
+func Create() Keypad {
 	return &keypad{
-		keys:    mkeys,
-		pressed: mpressed,
-		ikeys:   ikeys,
+		pressed: make(map[byte]bool),
 	}
 }
 
 func (kp *keypad) Clear() {
 	kp.mu.Lock()
 	defer kp.mu.Unlock()
-	for kaddr := range kp.keys {
+	for kaddr := range kp.pressed {
 		kp.pressed[kaddr] = false
 	}
 }
 
 func (kp *keypad) Get(kaddr uint8) bool {
-	// fmt.Printf("getting key: %c\n", kp.ikeys[kaddr])
 	kp.mu.Lock()
 	defer kp.mu.Unlock()
-	return kp.pressed[kp.ikeys[kaddr]]
+	return kp.pressed[kaddr]
 }
 
 func (kp *keypad) Set(kaddr uint8) {
 	kp.mu.Lock()
 	defer kp.mu.Unlock()
-	if !kp.keys[kaddr] {
-		fmt.Printf("invalid key: %c\n", kaddr)
-		return
-	}
-	// fmt.Printf("valid key: %c\n", kaddr)
-	kp.pressed[kaddr] = true
+	kp.pressed[toKeypad[kaddr]] = true
 }
 
 func (kp *keypad) Next() uint8 {
