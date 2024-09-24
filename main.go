@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"log"
 	"os"
 
@@ -8,7 +10,12 @@ import (
 )
 
 func main() {
-	f, err := os.Open("ibm.ch8")
+	fname := flag.String("f", "", "filename of rom")
+	flag.Parse()
+	if *fname == "" {
+		log.Fatal(errors.New("rom file not specified"))
+	}
+	f, err := os.Open(*fname)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
