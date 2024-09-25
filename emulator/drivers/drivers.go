@@ -2,6 +2,8 @@ package drivers
 
 import (
 	"log"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/bchadwic/chip8/emulator/display"
@@ -15,7 +17,14 @@ type driverContext struct {
 	speaker speaker.Speaker
 	keypad  keypad.Keypad
 	display display.Display
-	frame   int
+
+	// display settings
+	displayInitialized bool
+	frameRate          int
+	fill               bool
+	color              draw.Color
+
+	frame int
 }
 
 func Create(speaker speaker.Speaker, keypad keypad.Keypad, display display.Display) *driverContext {
@@ -23,62 +32,81 @@ func Create(speaker speaker.Speaker, keypad keypad.Keypad, display display.Displ
 		speaker: speaker,
 		keypad:  keypad,
 		display: display,
+		fill:    true,
+		color:   draw.White,
 	}
 }
 
-func (driver *driverContext) Start() {
-	rows, cols := driver.display.WindowSize()
-	err := draw.RunWindow(
-		"CHIP-8",
-		cols*display.SCALE,
-		rows*display.SCALE,
-		driver.update,
-	)
+func (dc *driverContext) DisplaySettings(frameRate int, fill bool, color string) *driverContext {
+	dc.displayInitialized = true
+	dc.frameRate = frameRate
+	dc.fill = fill
+	switch strings.ToLower(color) {
+	case "red":
+		dc.color = draw.Red
+	case "green":
+		dc.color = draw.Green
+	case "blue":
+		dc.color = draw.Blue
+	case "gray", "grey":
+		dc.color = draw.Gray
+	default:
+		dc.color = draw.White
+	}
+	return dc
+}
+
+func (dc *driverContext) Start() {
+	if !dc.displayInitialized {
+		log.Fatal("display driver was not initialized")
+	}
+	rows, cols := dc.display.WindowSize()
+	err := draw.RunWindow("CHIP-8", cols*display.SCALE, rows*display.SCALE, dc.update)
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("an error occurred starting driver: %v", err)
 	}
 }
 
-func (driver *driverContext) update(window draw.Window) {
+func (dc *driverContext) update(devices draw.Window) {
+	// rate limit the updates
 	time.Sleep(1 * time.Millisecond)
-	driver.frame++
-	w := make(chan string)
-	defer close(w)
+	dc.frame++
+	var wg sync.WaitGroup
+	wg.Add(3)
 
-	go func() {
-		// handle display
-		for _, pixel := range driver.display.Pixels() {
-			c := draw.Black
-			if pixel.Status == emit.ON {
-				c = draw.White
-			}
-			window.FillRect(
-				pixel.Col*display.SCALE,
-				pixel.Row*display.SCALE,
-				10,
-				10,
-				c,
-			)
+	go dc.renderDisplay(&wg, devices)
+	go dc.readKeyboard(&wg, devices)
+	go dc.playSpeakers(&wg, devices)
+
+	wg.Wait()
+}
+
+func (dc *driverContext) renderDisplay(wg *sync.WaitGroup, window draw.Window) {
+	defer wg.Done()
+	for _, pixel := range dc.display.Pixels() {
+		c := draw.Black
+		if pixel.Status == emit.ON {
+			c = dc.color
 		}
-		w <- "display"
-	}()
-
-	go func() {
-		chs := window.Characters()
-		for _, c := range chs {
-			driver.keypad.Set(uint8(c))
+		if dc.fill {
+			window.FillRect(pixel.Col*display.SCALE, pixel.Row*display.SCALE, 10, 10, c)
+		} else {
+			window.DrawRect(pixel.Col*display.SCALE, pixel.Row*display.SCALE, 10, 10, c)
 		}
-		w <- "keypad"
-	}()
+	}
+}
 
-	go func() {
-		if driver.frame%4 == 0 && driver.speaker.IsActive() {
-			window.PlaySoundFile("beep.wav")
-		}
-		w <- "sound"
-	}()
+func (dc *driverContext) readKeyboard(wg *sync.WaitGroup, keyboard draw.Window) {
+	defer wg.Done()
+	chs := keyboard.Characters()
+	for _, c := range chs {
+		dc.keypad.Set(uint8(c))
+	}
+}
 
-	<-w
-	<-w
-	<-w
+func (dc *driverContext) playSpeakers(wg *sync.WaitGroup, speakers draw.Window) {
+	defer wg.Done()
+	if dc.frame%dc.frameRate == 0 && dc.speaker.IsActive() {
+		speakers.PlaySoundFile("beep.wav")
+	}
 }
