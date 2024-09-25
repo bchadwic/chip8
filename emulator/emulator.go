@@ -1,6 +1,5 @@
 package emulator
 
-// https://github.com/plukraine/c8
 import (
 	"fmt"
 	"log"
@@ -14,48 +13,15 @@ import (
 	"github.com/bchadwic/chip8/emulator/speaker"
 )
 
-/*
- ADDRESS                                         CONTENT
- ~~~~~~~                                         ~~~~~~~
-
-   0x000  --------------------------------  <--  Start of RAM
-          |                              |
-          |  Interpreter code, fonts     |
-          |                              |
-   0x200  --------------------------------  <--  Start of user programs
-          |                              |
-          |                              |
-          |      User programs and       |
-          |        data go here          |
-          |                              |
-          |                              |
-   0x600  ................................  <--  Start of user programs (ETI 660)
-          |                              |
-          |                              |
-          |                              |
-          |                              |
-          |      User programs and       |
-          |        data go here          |
-          |                              |
-          |                              |
-          |                              |
-          |                              |
-   0xFFF  --------------------------------  <--  End of RAM
-*/
-
 const (
 	REGISTERS  = 16
 	MEM_SIZE   = 4096
 	STACK_SIZE = 16
 
-	ROWS = 32
-	COLS = 64
+	ROWS, COLS = 32, 64
 
 	FONT_ADDR = 0x050
 	ROM_ADDR  = 0x200
-
-	// TODO possibly move / remove?
-	KEYPAD_SIZE = 4 * 4
 
 	// niblet masks
 	N1_MASK = 0xF000
@@ -91,9 +57,9 @@ const (
 	XOR_VX_VY  = 0x0003 // bitwise vx xor vy
 	ADD_VX_VY  = 0x0004 // vx + vy
 	SUB_VX_VY  = 0x0005 // vx - vy
-	SHR_VX_VY  = 0x0006
-	SUBN_VX_VY = 0x0007
-	SHL_VX_VY  = 0x000E
+	SHR_VX_VY  = 0x0006 // vx >> 1 and store lsb in vf
+	SUBN_VX_VY = 0x0007 // vx - vy and set underflow in vf
+	SHL_VX_VY  = 0x000E // vx << 1 and store msb in vf
 
 	// sub instructions under VX_KEY_OPS
 	SEQ_VX_KEY_PR = 0x009E // skip if vx contains key pressed
@@ -109,10 +75,6 @@ const (
 	LD_B_VX  = 0x0033 // i, i+1, and i+2 represent BCD of vx
 	LD_I_VX  = 0x0055 // load memory i-n with the values stored in v0-vx
 	LD_VX_I  = 0x0065 // load v0-vx with values stored in memory i-n
-
-	// registers
-	V0 = 0x00
-	VF = 0x0F // used for subtraction borrow, addition carry, or pixel collision
 )
 
 var fonts []uint8 = []uint8{
@@ -134,30 +96,41 @@ var fonts []uint8 = []uint8{
 	0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 }
 
+type EmulatorSettings struct {
+	FrameRate int
+	Rom       []uint8
+	Fill      bool
+	Color     string
+}
+
 type emulator struct {
 	registers []uint8
 	mem       []uint8
+
 	// stack pointer
 	sp    uint8
 	stack []uint16
+
 	// index register
 	i uint16
 
 	// program counter
 	pc uint16
 
-	// delay timer
-	dt uint8
-	// sound timer
-	st uint8
+	// delay and sound timers
+	dt, st uint8
 
+	settings *EmulatorSettings
+
+	// devices
 	speaker speaker.Speaker
 	keypad  keypad.Keypad
 	display display.Display
 }
 
-func Create() *emulator {
+func Create(settings *EmulatorSettings) *emulator {
 	mem := make([]uint8, MEM_SIZE)
+	// load fonts into memory
 	for i := 0; i < len(fonts); i++ {
 		mem[i+FONT_ADDR] = fonts[i]
 	}
@@ -166,13 +139,21 @@ func Create() *emulator {
 	keypad := keypad.Create()
 	display := display.Create(ROWS, COLS)
 
-	dc := drivers.Create(speaker, keypad, display)
-	go dc.Start()
+	go drivers.Create(
+		speaker,
+		keypad,
+		display,
+	).DisplaySettings(
+		settings.FrameRate,
+		settings.Fill,
+		settings.Color,
+	).Start()
 
 	return &emulator{
 		registers: make([]uint8, REGISTERS),
 		mem:       mem,
 		stack:     make([]uint16, STACK_SIZE),
+		settings:  settings,
 		speaker:   speaker,
 		keypad:    keypad,
 		display:   display,
@@ -187,7 +168,7 @@ func (em *emulator) Load(rom []uint8) {
 }
 
 func (em *emulator) Start() {
-	clock := time.NewTicker(4 * time.Millisecond)
+	clock := time.NewTicker(time.Duration(em.settings.FrameRate) * time.Millisecond)
 	defer clock.Stop()
 
 	i := 0
@@ -203,10 +184,7 @@ func (em *emulator) Start() {
 		if err != nil {
 			log.Fatal(err.Error())
 		}
-		err = em.execute(inst)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
+		em.execute(inst)
 		if i%10 == 0 {
 			em.keypad.Clear()
 		}
@@ -226,7 +204,7 @@ func (em *emulator) fetch() (uint16, error) {
 	return (uint16(p1) << 8) | uint16(p2), nil
 }
 
-func (em *emulator) execute(inst uint16) error {
+func (em *emulator) execute(inst uint16) {
 	n1 := inst & N1_MASK
 	n2 := inst & N2_MASK
 	n3 := inst & N3_MASK
@@ -238,150 +216,111 @@ func (em *emulator) execute(inst uint16) error {
 	nn := n3 | n4
 
 	inc := true
-	opcode := ""
 	switch n1 {
 	case CLS_OR_RET:
 		switch inst {
 		case CLS:
-			opcode = "cls"
 			em.cls()
 		case RET:
-			opcode = "ret"
 			em.ret()
 		default:
-			return fmt.Errorf("opcode not found: %x", inst)
+			log.Fatalf("opcode not found: %x", inst)
 		}
 	case JMP:
-		opcode = "jmp"
 		em.jmp(addr)
 		inc = false
 	case CALL:
-		opcode = "cal"
 		em.call(addr)
 		inc = false
 	case SEQ_VX_NN:
-		opcode = "seqVxNN"
 		em.seqVxNN(x, nn)
 	case SNE_VX_NN:
-		opcode = "sneVxNN"
 		em.sneVxNN(x, nn)
 	case SEQ_VX_VY:
 		if n4 == 0 {
-			opcode = "seqVxVy"
 			em.seqVxVy(x, y)
 		} else {
-			return fmt.Errorf("opcode not found: %x", inst)
+			log.Fatalf("opcode not found: %x", inst)
 		}
 	case LD_VX_KK:
-		opcode = "ldVxKK"
 		em.ldVxKK(x, nn)
 	case ADD_VX_KK:
-		opcode = "addVxKK"
 		em.addVxKK(x, nn)
 	// TODO test these functions
 	case MOD_VX_VY_OPS:
 		switch n4 {
 		case LD_VX_VY:
-			opcode = "ldVxVy"
 			em.ldVxVy(x, y)
 		case OR_VX_VY:
-			opcode = "orVxVy"
 			em.orVxVy(x, y)
 		case AND_VX_VY:
-			opcode = "andVxVy"
 			em.andVxVy(x, y)
 		case XOR_VX_VY:
-			opcode = "xorVxVy"
 			em.xorVxVy(x, y)
 		case ADD_VX_VY:
-			opcode = "addVxVy"
 			em.addVxVy(x, y)
 		case SUB_VX_VY:
-			opcode = "subVxVy"
 			em.subVxVy(x, y)
 		case SHR_VX_VY:
-			opcode = "shrVxVy"
 			em.shrVxVy(x, y)
 		case SUBN_VX_VY:
-			opcode = "subVxVy"
 			em.subnVxVy(x, y)
 		case SHL_VX_VY:
-			opcode = "shlVxVy"
 			em.shlVxVy(x, y)
 		default:
-			return fmt.Errorf("opcode not found: %x", inst)
+			log.Fatalf("opcode not found: %x", inst)
 		}
 	case SNE_VX_VY:
 		if n4 == 0 {
-			opcode = "sneVxVy"
 			em.sneVxVy(x, y)
 		} else {
-			return fmt.Errorf("opcode not found: %x", inst)
+			log.Fatalf("opcode not found: %x", inst)
 		}
 	case LD_I:
-		opcode = "ldI"
 		em.ldI(addr)
 	case JMP_V0:
-		opcode = "jmpV0"
 		em.jmpV0(addr)
 		inc = false
 	case RND_VX_KK:
-		opcode = "rndVxKK"
 		em.rndVxKK(x, nn)
 	case DRW_VX_VY_N:
-		opcode = "drawVxVyN"
 		em.drawVxVyN(x, y, n4)
 	case VX_KEY_OPS:
 		if nn == SEQ_VX_KEY_PR {
-			opcode = "seqVxKeyPr"
 			em.seqVxKey(x)
 		} else if n3|n4 == SNE_VX_KEY_PR {
-			opcode = "sneVxKeyPr"
 			em.sneVxKey(x)
 		} else {
-			return fmt.Errorf("opcode not found: %x", inst)
+			log.Fatalf("opcode not found: %x", inst)
 		}
 	case TIMING_OPS:
 		switch nn {
 		case LD_VX_DT:
-			opcode = "ldVxDt"
 			em.ldVxDt(x)
 		case LD_VX_K:
-			opcode = "ldVxK"
 			em.ldVxK(x)
 		case LD_DT_VX:
-			opcode = "ldDtVx"
 			em.ldDtVx(x)
 		case LD_ST_VX:
-			opcode = "ldStVx"
 			em.ldStVx(x)
 		case ADD_I_VX:
-			opcode = "addIVx"
 			em.addIVx(x)
 		case LD_F_VX:
-			opcode = "ldFVx"
 			em.ldFVx(x)
 		case LD_B_VX:
-			opcode = "ldBVx"
 			em.ldBVx(x)
 		case LD_I_VX:
-			opcode = "ldIVx"
 			em.ldIVx(x)
 		case LD_VX_I:
-			opcode = "ldVxI"
 			em.ldVxI(x)
 		default:
-			return fmt.Errorf("opcode not found: %x", inst)
+			log.Fatalf("opcode not found: %x", inst)
 		}
 	}
-	opcodes[opcode] = true
 	if inc {
 		em.pc += 2
 	}
-	return nil
 }
-
-var opcodes map[string]bool = make(map[string]bool)
 
 // clear screen
 func (em *emulator) cls() {
@@ -473,7 +412,7 @@ func (em *emulator) xorVxVy(x uint16, y uint16) {
 func (em *emulator) addVxVy(x uint16, y uint16) {
 	sum := em.registers[x] + em.registers[y]
 	if sum < em.registers[x] {
-		em.registers[VF] = 1 // set overflow
+		em.registers[0xF] = 1 // set overflow
 	}
 	em.registers[x] = sum
 }
@@ -484,9 +423,9 @@ func (em *emulator) addVxVy(x uint16, y uint16) {
 func (em *emulator) subVxVy(x uint16, y uint16) {
 	diff := em.registers[x] - em.registers[y]
 	if em.registers[y] > em.registers[x] {
-		em.registers[VF] = 0
+		em.registers[0xF] = 0
 	} else {
-		em.registers[VF] = 1 // set underflow
+		em.registers[0xF] = 1 // set underflow
 	}
 	em.registers[x] = diff
 }
@@ -495,7 +434,7 @@ func (em *emulator) subVxVy(x uint16, y uint16) {
 // store the LSB of the value stored in register X to VF
 // then right shift the value of register X by 1, then store to register X
 func (em *emulator) shrVxVy(x uint16, _ uint16) {
-	em.registers[VF] = em.registers[x] & 0x01
+	em.registers[0xF] = em.registers[x] & 0x01
 	em.registers[x] >>= 1
 }
 
@@ -504,9 +443,9 @@ func (em *emulator) shrVxVy(x uint16, _ uint16) {
 // if underflow occurs, set VF register to 0, otherwise 1
 func (em *emulator) subnVxVy(x uint16, y uint16) {
 	if em.registers[x] > em.registers[y] {
-		em.registers[VF] = 0
+		em.registers[0xF] = 0
 	} else {
-		em.registers[VF] = 1
+		em.registers[0xF] = 1
 	}
 	em.registers[x] = em.registers[y] - em.registers[x]
 }
@@ -515,7 +454,7 @@ func (em *emulator) subnVxVy(x uint16, y uint16) {
 // store the MSB of the value stored in register X to VF
 // then left shift the value of register X by 1, then store to register X
 func (em *emulator) shlVxVy(x uint16, _ uint16) {
-	em.registers[VF] = em.registers[x] >> 7
+	em.registers[0xF] = em.registers[x] >> 7
 	em.registers[x] <<= 1
 }
 
@@ -536,7 +475,7 @@ func (em *emulator) ldI(addr uint16) {
 // 0xBnnn
 // set the program counter to addr (nnn) + register v0 value
 func (em *emulator) jmpV0(addr uint16) {
-	em.pc = addr + uint16(em.registers[V0])
+	em.pc = addr + uint16(em.registers[0])
 }
 
 // 0xCxkk
@@ -551,7 +490,7 @@ func (em *emulator) rndVxKK(x uint16, kk uint16) {
 func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) {
 	startc := em.registers[x] % COLS // clamp cx to display width
 	startr := em.registers[y] % ROWS // clamp cy to display height
-	em.registers[VF] = 0             // clear collision flag
+	em.registers[0xF] = 0            // clear collision flag
 
 	for rowi := uint8(0); rowi < uint8(n); rowi++ {
 		index := em.i + uint16(rowi)
@@ -570,7 +509,7 @@ func (em *emulator) drawVxVyN(x uint16, y uint16, n uint16) {
 				pixel := em.display.Get(pixelr, pixelc)
 				if pixel {
 					em.display.Set(emit.OFF, pixelr, pixelc)
-					em.registers[VF] = 1 // Collision detected
+					em.registers[0xF] = 1 // Collision detected
 				} else {
 					em.display.Set(emit.ON, pixelr, pixelc)
 				}
@@ -628,9 +567,9 @@ func (em *emulator) ldStVx(x uint16) {
 // add i and value of register X, then store to i
 func (em *emulator) addIVx(x uint16) {
 	if em.i+uint16(em.registers[x]) > 0xFFF {
-		em.registers[VF] = 1
+		em.registers[0xF] = 1
 	} else {
-		em.registers[VF] = 0
+		em.registers[0xF] = 0
 	}
 	em.i += uint16(em.registers[x])
 }
