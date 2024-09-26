@@ -391,19 +391,19 @@ func (em *emulator) ldVxVy(x uint16, y uint16) {
 // 0x8xy1
 // bitwise register X or Y, then store to register X
 func (em *emulator) orVxVy(x uint16, y uint16) {
-	em.registers[x] = em.registers[x] | em.registers[y]
+	em.registers[x] |= em.registers[y]
 }
 
 // 0x8xy2
 // bitwise register X and Y, then store to register X
 func (em *emulator) andVxVy(x uint16, y uint16) {
-	em.registers[x] = em.registers[x] & em.registers[y]
+	em.registers[x] &= em.registers[y]
 }
 
 // 0x8xy3
 // bitwise register X xor Y, then store to register X
 func (em *emulator) xorVxVy(x uint16, y uint16) {
-	em.registers[x] = em.registers[x] ^ em.registers[y]
+	em.registers[x] ^= em.registers[y]
 }
 
 // 0x8xy4
