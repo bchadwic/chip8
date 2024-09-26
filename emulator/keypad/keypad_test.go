@@ -1,8 +1,20 @@
 package keypad
 
+/*
+
+package keypad
+
 import (
 	"sync"
 )
+
+// dvorak to keypad
+var toKeypad map[byte]uint8 = map[byte]uint8{
+	'1': 0x1, '2': 0x2, '3': 0x3, '4': 0xC,
+	'\'': 0x4, ',': 0x5, '.': 0x6, 'p': 0xD,
+	'a': 0x7, 'o': 0x8, 'e': 0x9, 'u': 0xE,
+	';': 0xA, 'q': 0x0, 'j': 0xB, 'k': 0xF,
+}
 
 type Keypad interface {
 	Clear()
@@ -39,7 +51,7 @@ func (kp *keypad) Get(kaddr uint8) bool {
 func (kp *keypad) Set(kaddr uint8) {
 	kp.mu.Lock()
 	defer kp.mu.Unlock()
-	kp.pressed[kaddr] = true
+	kp.pressed[toKeypad[kaddr]] = true
 }
 
 func (kp *keypad) Next() uint8 {
@@ -54,3 +66,5 @@ func (kp *keypad) Next() uint8 {
 		kp.mu.Unlock()
 	}
 }
+
+*/

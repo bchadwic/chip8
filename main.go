@@ -12,8 +12,10 @@ func main() {
 	settings := &emulator.EmulatorSettings{}
 
 	flag.IntVar(&settings.FrameRate, "r", 4, "frame refresh rate")
-	flag.BoolVar(&settings.Fill, "l", false, "color fill pixels")
+	flag.BoolVar(&settings.Fill, "l", true, "color fill pixels")
 	flag.StringVar(&settings.Color, "c", "white", "color of pixels")
+	// sorry, dvorak is my default... eventually deprecating this flag for a keymap file would be best
+	flag.StringVar(&settings.Keyboard, "k", "dvorak", "type of keyboard (dvorak, qwerty)")
 	flag.Parse()
 
 	fname := flag.Arg(0)

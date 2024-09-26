@@ -24,7 +24,25 @@ type driverContext struct {
 	fill               bool
 	color              draw.Color
 
+	// keyboard settings
+	keypadInitialized bool
+	keyboard          map[byte]uint8
+
 	frame int
+}
+
+var qwerty map[byte]uint8 = map[byte]uint8{
+	'1': 0x1, '2': 0x2, '3': 0x3, '4': 0xC,
+	'q': 0x4, 'w': 0x5, 'e': 0x6, 'r': 0xD,
+	'a': 0x7, 's': 0x8, 'd': 0x9, 'f': 0xE,
+	'z': 0xA, 'x': 0x0, 'c': 0xB, 'v': 0xF,
+}
+
+var dvorak map[byte]uint8 = map[byte]uint8{
+	'1': 0x1, '2': 0x2, '3': 0x3, '4': 0xC,
+	'\'': 0x4, ',': 0x5, '.': 0x6, 'p': 0xD,
+	'a': 0x7, 'o': 0x8, 'e': 0x9, 'u': 0xE,
+	';': 0xA, 'q': 0x0, 'j': 0xB, 'k': 0xF,
 }
 
 func Create(speaker speaker.Speaker, keypad keypad.Keypad, display display.Display) *driverContext {
@@ -56,9 +74,23 @@ func (dc *driverContext) DisplaySettings(frameRate int, fill bool, color string)
 	return dc
 }
 
+func (dc *driverContext) KeypadSettings(keyboard string) *driverContext {
+	dc.keypadInitialized = true
+	switch strings.ToLower(keyboard) {
+	case "dvorak":
+		dc.keyboard = dvorak
+	default:
+		dc.keyboard = qwerty
+	}
+	return dc
+}
+
 func (dc *driverContext) Start() {
 	if !dc.displayInitialized {
 		log.Fatal("display driver was not initialized")
+	}
+	if !dc.keypadInitialized {
+		log.Fatal("keypad driver was not initialized")
 	}
 	rows, cols := dc.display.WindowSize()
 	err := draw.RunWindow("CHIP-8", cols*display.SCALE, rows*display.SCALE, dc.update)
@@ -100,7 +132,8 @@ func (dc *driverContext) readKeyboard(wg *sync.WaitGroup, keyboard draw.Window) 
 	defer wg.Done()
 	chs := keyboard.Characters()
 	for _, c := range chs {
-		dc.keypad.Set(uint8(c))
+		key := dc.keyboard[uint8(c)]
+		dc.keypad.Set(key)
 	}
 }
 

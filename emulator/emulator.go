@@ -101,6 +101,7 @@ type EmulatorSettings struct {
 	Rom       []uint8
 	Fill      bool
 	Color     string
+	Keyboard  string
 }
 
 type emulator struct {
@@ -143,6 +144,8 @@ func Create(settings *EmulatorSettings) *emulator {
 		speaker,
 		keypad,
 		display,
+	).KeypadSettings(
+		settings.Keyboard,
 	).DisplaySettings(
 		settings.FrameRate,
 		settings.Fill,
