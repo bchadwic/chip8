@@ -1,481 +1,286 @@
 package emulator
 
 import (
-	"errors"
-	"fmt"
+	"math/rand"
 	"testing"
 
+	"github.com/bchadwic/chip8/emulator/mocks"
 	"github.com/stretchr/testify/assert"
 )
 
+func testEmulator() *emulator {
+	mem := make([]uint8, MEM_SIZE)
+	// load fonts into memory
+	for i := 0; i < len(fonts); i++ {
+		mem[i+FONT_ADDR] = fonts[i]
+	}
+
+	return &emulator{
+		registers: make([]uint8, REGISTERS),
+		mem:       mem,
+		stack:     make([]uint16, STACK_SIZE),
+	}
+}
+
+func Test_Create(t *testing.T) {
+	em := Create(&EmulatorSettings{})
+	assert.NotNil(t, em)
+	assert.Equal(t, len(em.registers), REGISTERS)
+	assert.Equal(t, len(em.stack), STACK_SIZE)
+}
+
+func Test_Load(t *testing.T) {
+	em := testEmulator()
+	em.Load([]uint8{0xf, 0xf, 0xf})
+	assert.Equal(t, em.pc, uint16(ROM_ADDR))
+}
+
 func Test_fetch(t *testing.T) {
-	tests := map[string]struct {
-		pc        uint16
-		p1, p2    uint8
-		inst      uint16
-		wantedErr error
-	}{
-		"t1": {
-			pc:   20,
-			p1:   0b1010_1010,
-			p2:   0b1010_1010,
-			inst: 0b1010_1010_1010_1010,
-		},
-		"t2": {
-			pc:   500,
-			p1:   0b1110_1110,
-			p2:   0b0000_0011,
-			inst: 0b1110_1110_0000_0011,
-		},
-		"t3": {
-			pc:   600,
-			p1:   0b1110_1110,
-			p2:   0b0000_0011,
-			inst: 0b1110_1110_0000_0011,
-		},
-		"t4": {
-			pc:   MEM_SIZE - 2,
-			p1:   0b1100_0011,
-			p2:   0b0011_1100,
-			inst: 0b1100_0011_0011_1100,
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			em := Create()
-			em.pc = test.pc
-			em.mem[test.pc] = test.p1
-			em.mem[test.pc+1] = test.p2
-
-			inst, err := em.fetch()
-			assert.True(t, (err != nil) == (test.wantedErr != nil))
-			if test.wantedErr != nil {
-				assert.Equal(t, test.wantedErr, err)
-				return
-			}
-			assert.Equal(t, test.inst, inst)
-			assert.Equal(t, test.pc+2, em.pc)
-		})
-	}
+	em := testEmulator()
+	em.Load([]uint8{0x65, 0x05})
+	fetchedInstruction, err := em.fetch()
+	assert.Nil(t, err)
+	assert.Equal(t, fetchedInstruction, uint16(0x6505))
 }
 
 func Test_cls(t *testing.T) {
-	tests := map[string]struct {
-		display []uint8
-	}{
-		"t1": {
-			display: []uint8{
-				0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0,
-				1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-				0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0,
-				1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-				0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0,
-				1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-				0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0,
-				1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-			},
-		},
-		"t2": {
-			display: []uint8{
-				1, 1, 6, 5, 0, 1, 0, 1, 0, 1, 1, 1, 8, 1, 0,
-				1, 1, 1, 0, 1, 0, 1, 0, 8, 0, 1, 1, 1, 0, 1,
-				1, 1, 2, 1, 0, 1, 0, 1, 1, 1, 0, 1, 9, 1, 0,
-				1, 1, 1, 0, 1, 0, 3, 0, 5, 0, 1, 1, 0, 0, 1,
-				1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0,
-				1, 1, 1, 6, 1, 0, 9, 0, 1, 1, 1, 1, 3, 0, 1,
-				1, 1, 1, 1, 0, 1, 0, 1, 7, 1, 1, 1, 2, 1, 0,
-				1, 1, 1, 0, 1, 0, 1, 0, 7, 0, 1, 0, 3, 5, 1,
-			},
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			em := Create()
-			em.display = test.display
-
-			em.cls()
-			var zero uint8 = 0
-			for _, e := range em.display {
-				assert.Equal(t, zero, e)
-			}
-		})
-	}
+	em := testEmulator()
+	display := &mocks.TestDisplay{}
+	em.display = display
+	em.cls()
+	assert.True(t, display.In_Clear)
 }
 
 func Test_ret(t *testing.T) {
-	tests := map[string]struct {
-		pc        uint16
-		sp        uint8
-		stack     []uint16
-		wantedErr error
-	}{
-		"t1": {
-			pc: 0x03af,
-			sp: 2,
-			// 16 positions
-			stack: []uint16{0x0dde, 0xdee, 0x0ddd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		},
-		"t2": {
-			pc: 0x03af,
-			sp: 3,
-			// 16 positions
-			stack: []uint16{0x0dde, 0xdee, 0x0ddd, 0x0333, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		},
-		"t3": {
-			pc: 0x0333,
-			sp: 1,
-			// 16 positions
-			stack: []uint16{0x0dde, 0xdee, 0x0ddd, 0x0333, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		},
-		"t4": {
-			pc: 0x0333,
-			sp: 16,
-			// 16 positions
-			stack:     []uint16{0x0dde, 0xdee, 0x0ddd, 0x0333, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			wantedErr: fmt.Errorf("stack pointer out of bounds: %d", 16),
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			em := Create()
-			em.pc = test.pc
-			em.sp = test.sp
-			em.stack = test.stack
-
-			err := em.ret()
-			assert.True(t, (err != nil) == (test.wantedErr != nil))
-			if test.wantedErr != nil {
-				assert.Equal(t, test.wantedErr, err)
-				return
-			}
-			assert.Equal(t, em.pc, em.stack[em.sp+1])
-		})
-	}
+	em := testEmulator()
+	em.stack[2] = 0xFA
+	em.sp = 3
+	em.ret()
+	assert.Equal(t, em.sp, uint8(2))
+	assert.Equal(t, em.pc, uint16(0xFA))
 }
 
 func Test_jmp(t *testing.T) {
-	tests := map[string]struct {
-		addr uint16
-	}{
-		"t1": {
-			addr: 0x0333,
-		},
-		"t2": {
-			addr: 0x0334,
-		},
-		"t3": {
-			addr: 0x0433,
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			em := Create()
-			em.jmp(test.addr)
-			assert.Equal(t, test.addr, em.pc)
-		})
-	}
+	em := testEmulator()
+	em.pc = 0x233
+	em.jmp(0x333)
+	assert.Equal(t, em.pc, uint16(0x333))
 }
 
 func Test_call(t *testing.T) {
-	tests := map[string]struct {
-		pc        uint16
-		sp        uint8
-		stack     []uint16
-		addr      uint16
-		wantedErr error
-	}{
-		"t1": {
-			pc:    0x0363,
-			sp:    3,
-			stack: []uint16{0x0dde, 0xdee, 0x0ddd, 0x0333, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		},
-		"t2": {
-			pc:    0x0222,
-			sp:    1,
-			stack: []uint16{0x0dde, 0xdee, 0x0ddd, 0x0333, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		},
-		"t3": {
-			pc:        0x0441,
-			sp:        15,
-			stack:     []uint16{0x0dde, 0xdee, 0x0ddd, 0x0333, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			wantedErr: errors.New("stack overflow"),
-		},
-	}
+	em := testEmulator()
+	em.sp = 3
+	em.stack[3] = 0x222
+	em.pc = 0x123
 
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			em := Create()
-			em.pc = test.pc
-			em.sp = test.sp
-			em.stack = test.stack
-			err := em.call(test.addr)
-
-			assert.True(t, (err != nil) == (test.wantedErr != nil))
-			if test.wantedErr != nil {
-				assert.Equal(t, test.wantedErr, err)
-				return
-			}
-			assert.Equal(t, test.sp+1, em.sp)
-			assert.Equal(t, test.pc, em.stack[test.sp+1])
-			assert.Equal(t, test.addr, em.pc)
-		})
-	}
+	em.call(0x333)
+	assert.Equal(t, em.pc, uint16(0x333))
+	assert.Equal(t, em.stack[3], uint16(0x123))
+	assert.Equal(t, em.sp, uint8(4))
 }
 
 func Test_seqVxNN(t *testing.T) {
-	tests := map[string]struct {
-		pc        uint16
-		registers []uint8
-		x         uint16
-		nn        uint16
-		wantedInc bool
-		wantedErr error
-	}{
-		"t1": {
-			pc: 0x0333,
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         2,
-			nn:        0xff,
-			// true because v[2] = 0xff, and nn = 0xff, so an increment of 2 should occur
-			wantedInc: true,
-		},
-		"t2": {
-			pc: 0x0333,
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         2,
-			nn:        0xfe,
-			// false because v[2] = 0xff, and nn = 0xfe, so an increment should not occur
-			wantedInc: false,
-		},
-		"t3": {
-			pc: 0x0333,
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         18,
-			nn:        0xfe,
-			wantedErr: errors.New("register index out of bounds"),
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			em := Create()
-			em.pc = test.pc
-			em.registers = test.registers
-			err := em.seqVxNN(test.x, test.nn)
-
-			assert.True(t, (err != nil) == (test.wantedErr != nil))
-			if test.wantedErr != nil {
-				assert.Equal(t, test.wantedErr, err)
-				return
-			}
-			if test.wantedInc {
-				assert.Equal(t, test.pc+2, em.pc)
-			} else {
-				assert.Equal(t, test.pc, em.pc)
-			}
-		})
-	}
+	em := testEmulator()
+	em.registers[3] = uint8(0x32)
+	em.pc = 3
+	em.seqVxNN(3, 0x32)
+	assert.Equal(t, em.pc, uint16(5))
+	assert.Equal(t, em.registers[3], uint8(0x32))
 }
 
 func Test_sneVxNN(t *testing.T) {
-	tests := map[string]struct {
-		pc        uint16
-		registers []uint8
-		x         uint16
-		nn        uint16
-		wantedInc bool
-		wantedErr error
-	}{
-		"t1": {
-			pc: 0x0333,
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         2,
-			nn:        0xff,
-			// false because v[2] = 0xff, and nn = 0xff, so an increment of 2 should occur
-			wantedInc: false,
-		},
-		"t2": {
-			pc: 0x0333,
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         2,
-			nn:        0xfe,
-			// true because v[2] = 0xff, and nn = 0xfe, so an increment should not occur
-			wantedInc: true,
-		},
-		"t3": {
-			pc: 0x0333,
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         18,
-			nn:        0xfe,
-			wantedErr: errors.New("register index out of bounds"),
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			em := Create()
-			em.pc = test.pc
-			em.registers = test.registers
-			err := em.sneVxNN(test.x, test.nn)
-
-			assert.True(t, (err != nil) == (test.wantedErr != nil))
-			if test.wantedErr != nil {
-				assert.Equal(t, test.wantedErr, err)
-				return
-			}
-			if test.wantedInc {
-				assert.Equal(t, test.pc+2, em.pc)
-			} else {
-				assert.Equal(t, test.pc, em.pc)
-			}
-		})
-	}
+	em := testEmulator()
+	em.registers[3] = uint8(0x32)
+	em.pc = 3
+	em.sneVxNN(3, 0x32)
+	assert.Equal(t, em.pc, uint16(3))
+	assert.Equal(t, em.registers[3], uint8(0x32))
 }
 
 func Test_seqVxVy(t *testing.T) {
-	tests := map[string]struct {
-		pc        uint16
-		registers []uint8
-		x         uint16
-		y         uint16
-		wantedInc bool
-		wantedErr error
-	}{
-		"t1": {
-			pc: 0x0333,
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         2,
-			y:         3,
-			// true because v[2] = 0xff, and v[3] = 0xff, so an increment of 2 should occur
-			wantedInc: true,
-		},
-		"t2": {
-			pc: 0x0333,
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0xff, 0x22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         3,
-			y:         4,
-			// false because v[2] = 0xff, and v[3] = 0x22, so an increment of 2 should not occur
-			wantedInc: false,
-		},
-		"t3": {
-			pc: 0x0333,
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         18,
-			y:         4,
-			wantedErr: errors.New("register index out of bounds"),
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			em := Create()
-			em.pc = test.pc
-			em.registers = test.registers
-			err := em.seqVxVy(test.x, test.y)
-
-			assert.True(t, (err != nil) == (test.wantedErr != nil))
-			if test.wantedErr != nil {
-				assert.Equal(t, test.wantedErr, err)
-				return
-			}
-			if test.wantedInc {
-				assert.Equal(t, test.pc+2, em.pc)
-			} else {
-				assert.Equal(t, test.pc, em.pc)
-			}
-		})
-	}
+	em := testEmulator()
+	em.registers[3] = uint8(0x32)
+	em.registers[4] = uint8(0x32)
+	em.pc = 3
+	em.seqVxVy(3, 4)
+	assert.Equal(t, em.pc, uint16(5))
+	assert.Equal(t, em.registers[3], uint8(0x32))
 }
 
 func Test_ldVxKK(t *testing.T) {
-	tests := map[string]struct {
-		registers []uint8
-		x         uint16
-		kk        uint16
-		wantedErr error
-	}{
-		"t1": {
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         2,
-			kk:        0x03,
-		},
-		"t2": {
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         18,
-			kk:        0x03,
-			wantedErr: errors.New("register index out of bounds"),
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			em := Create()
-			em.registers = test.registers
-			err := em.ldVxKK(test.x, test.kk)
-
-			assert.True(t, (err != nil) == (test.wantedErr != nil))
-			if test.wantedErr != nil {
-				assert.Equal(t, test.wantedErr, err)
-				return
-			}
-			assert.Equal(t, em.registers[test.x], uint8(test.kk))
-		})
-	}
+	em := testEmulator()
+	em.registers[3] = uint8(0x1)
+	em.ldVxKK(3, 0x3)
+	assert.Equal(t, em.registers[3], uint8(0x3))
 }
 
 func Test_addVxKK(t *testing.T) {
-	tests := map[string]struct {
-		registers []uint8
-		x         uint16
-		kk        uint16
-		wantedErr error
-	}{
-		"t1": {
-			// v
-			registers: []uint8{0x21, 0x33, 0xee, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         2,
-			kk:        0x03,
-		},
-		"t2": {
-			// v
-			registers: []uint8{0x21, 0x33, 0xff, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			x:         18,
-			kk:        0x03,
-			wantedErr: errors.New("register index out of bounds"),
-		},
-	}
+	em := testEmulator()
+	em.registers[3] = uint8(0x1)
+	em.addVxKK(3, 0x3)
+	assert.Equal(t, em.registers[3], uint8(0x4))
+}
 
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			em := Create()
-			em.registers = test.registers
-			var before uint8 = 0
-			if test.wantedErr == nil {
-				before = em.registers[test.x]
-			}
-			err := em.addVxKK(test.x, test.kk)
+func Test_ldVxVy(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = uint8(0x1)
+	em.registers[4] = uint8(0x2)
+	em.ldVxVy(3, 4)
+	assert.Equal(t, em.registers[3], uint8(0x2))
+}
 
-			assert.True(t, (err != nil) == (test.wantedErr != nil))
-			if test.wantedErr != nil {
-				assert.Equal(t, test.wantedErr, err)
-				return
-			}
-			assert.Equal(t, before+uint8(test.kk), em.registers[test.x])
-		})
-	}
+func Test_orVxVy(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = uint8(0x1)
+	em.registers[4] = uint8(0x2)
+	em.orVxVy(3, 4)
+	assert.Equal(t, em.registers[3], uint8(0x1)|uint8(0x2))
+}
+
+func Test_andVxVy(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = uint8(0x1)
+	em.registers[4] = uint8(0x2)
+	em.andVxVy(3, 4)
+	assert.Equal(t, em.registers[3], uint8(0x1)&uint8(0x2))
+}
+
+func Test_xorVxVy(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = uint8(0x1)
+	em.registers[4] = uint8(0x2)
+	em.xorVxVy(3, 4)
+	assert.Equal(t, em.registers[3], uint8(0x1)^uint8(0x2))
+}
+
+func Test_addVxVy(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = uint8(250)
+	em.registers[4] = uint8(10)
+	em.addVxVy(3, 4)
+	assert.Equal(t, em.registers[3], uint8(4))
+	assert.Equal(t, em.registers[0xF], uint8(1))
+}
+
+func Test_subVxVy(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = uint8(250)
+	em.registers[4] = uint8(10)
+	em.subVxVy(3, 4)
+	assert.Equal(t, em.registers[3], uint8(0xf0))
+	assert.Equal(t, em.registers[0xF], uint8(1))
+}
+
+func Test_shrVxVy(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = uint8(1)
+	em.shrVxVy(3, 4)
+	assert.Equal(t, em.registers[3], uint8(0x0))
+	assert.Equal(t, em.registers[0xF], uint8(1))
+}
+
+func Test_subnVxVy(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = uint8(3)
+	em.registers[4] = uint8(5)
+	em.shrVxVy(3, 4)
+	assert.Equal(t, em.registers[3], uint8(0x1))
+	assert.Equal(t, em.registers[0xF], uint8(1))
+}
+
+func Test_shlVxVy(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = uint8(3)
+	em.shlVxVy(3, 4)
+	assert.Equal(t, em.registers[3], uint8(0x3)<<1)
+	assert.Equal(t, em.registers[0xF], uint8(3)>>7)
+}
+
+func Test_sneVxVy(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = uint8(3)
+	em.registers[4] = uint8(8)
+	em.pc = 3
+	em.sneVxVy(3, 4)
+	assert.Equal(t, em.pc, uint16(5))
+}
+
+func Test_ldI(t *testing.T) {
+	em := testEmulator()
+	em.i = 3
+	em.ldI(6)
+	assert.Equal(t, em.i, uint16(6))
+}
+
+func Test_jmpV0(t *testing.T) {
+	em := testEmulator()
+	em.pc = 3
+	em.registers[0] = 2
+	em.jmpV0(6)
+	assert.Equal(t, em.pc, uint16(8))
+}
+
+func Test_rndVxKK(t *testing.T) {
+	em := testEmulator()
+	em.pc = 3
+	// deprecated, but I don't think I care yet
+	rand.Seed(32)
+	em.registers[3] = 2
+	em.rndVxKK(3, 6)
+	assert.Equal(t, em.pc, uint16(3))
+}
+
+func Test_ldVxDt(t *testing.T) {
+	em := testEmulator()
+	em.registers[3] = 2
+	em.dt = 3
+	em.ldVxDt(3)
+	assert.Equal(t, em.registers[3], uint8(3))
+}
+
+func Test_ldDtVx(t *testing.T) {
+	em := testEmulator()
+	em.dt = 3
+	em.registers[3] = 2
+	em.ldDtVx(3)
+	assert.Equal(t, em.dt, uint8(2))
+}
+
+func Test_ldStVx(t *testing.T) {
+	em := testEmulator()
+	em.st = 3
+	em.registers[3] = 2
+	em.ldStVx(3)
+	assert.Equal(t, em.st, uint8(2))
+}
+
+func Test_addIVx(t *testing.T) {
+	em := testEmulator()
+	em.i = 3
+	em.registers[3] = 2
+	em.addIVx(3)
+	assert.Equal(t, em.i, uint16(5))
+	assert.Equal(t, em.registers[0xF], uint8(0))
+}
+
+func Test_ldFVx(t *testing.T) {
+	em := testEmulator()
+	em.i = 3
+	em.registers[3] = 2
+	em.ldFVx(3)
+	assert.Equal(t, em.i, uint16(2)*5)
+}
+
+func Test_ldIVx(t *testing.T) {
+	em := testEmulator()
+	em.i = 3
+	em.ldIVx(3)
+	assert.Equal(t, em.i, uint16(4))
+}
+
+func Test_ldVxI(t *testing.T) {
+	em := testEmulator()
+	em.i = 3
+	em.ldVxI(3)
+	assert.Equal(t, em.i, uint16(4))
 }
