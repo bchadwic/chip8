@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bchadwic/chip8/emulator/display"
-	"github.com/bchadwic/chip8/emulator/display/emit"
-	"github.com/bchadwic/chip8/emulator/keypad"
-	"github.com/bchadwic/chip8/emulator/speaker"
+	"github.com/bchadwic/chip8/internal/display"
+	"github.com/bchadwic/chip8/internal/display/emit"
+	"github.com/bchadwic/chip8/internal/keypad"
+	"github.com/bchadwic/chip8/internal/speaker"
 	"github.com/gonutz/prototype/draw"
 )
 

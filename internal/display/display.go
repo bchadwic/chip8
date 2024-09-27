@@ -1,7 +1,7 @@
 package display
 
 import (
-	"github.com/bchadwic/chip8/emulator/display/emit"
+	"github.com/bchadwic/chip8/internal/display/emit"
 )
 
 type Display interface {

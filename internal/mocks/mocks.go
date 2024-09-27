@@ -1,8 +1,8 @@
 package mocks
 
 import (
-	"github.com/bchadwic/chip8/emulator/display"
-	"github.com/bchadwic/chip8/emulator/display/emit"
+	"github.com/bchadwic/chip8/internal/display"
+	"github.com/bchadwic/chip8/internal/display/emit"
 )
 
 type TestDisplay struct {

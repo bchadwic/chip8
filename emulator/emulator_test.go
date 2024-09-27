@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/bchadwic/chip8/emulator/mocks"
+	"github.com/bchadwic/chip8/internal/mocks"
 	"github.com/stretchr/testify/assert"
 )
 
