@@ -3,7 +3,7 @@ package display
 import (
 	"testing"
 
-	"github.com/bchadwic/chip8/emulator/display/emit"
+	"github.com/bchadwic/chip8/internal/display/emit"
 	"github.com/stretchr/testify/assert"
 )
 
