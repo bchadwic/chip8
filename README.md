@@ -1,6 +1,6 @@
 # chip8
 
-This is my implementation of the [CHIP 8 interpreter](https://en.wikipedia.org/wiki/CHIP-8).
+This is my implementation of the [CHIP-8 interpreter](https://en.wikipedia.org/wiki/CHIP-8).
 
 ## Usage
 
