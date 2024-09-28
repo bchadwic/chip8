@@ -1,5 +1,2 @@
-debug
-docs
-*.exe
 chip8
-*.ch8
+*.exe
